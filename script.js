@@ -18,6 +18,7 @@ const hudLevel = document.getElementById("hud-level");
 const hudTime = document.getElementById("hud-time");
 const hudScore = document.getElementById("hud-score");
 const hudLives = document.getElementById("hud-lives");
+const hudHearts = document.getElementById("hud-hearts");
 const hudCombo = document.getElementById("hud-combo");
 const touchDrift = document.getElementById("touch-drift");
 const touchBoost = document.getElementById("touch-boost");
@@ -41,10 +42,10 @@ scene.fog = new THREE.Fog(0x0b0f14, 40, 420);
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 600);
 camera.position.set(0, 7.5, 14);
 
-const hemi = new THREE.HemisphereLight(0xfff0e0, 0x0b1524, 0.9);
+const hemi = new THREE.HemisphereLight(0xf4fbff, 0x12334f, 1.05);
 scene.add(hemi);
 
-const sun = new THREE.DirectionalLight(0xff7a45, 1.0);
+const sun = new THREE.DirectionalLight(0xffd8aa, 1.15);
 sun.position.set(18, 28, 14);
 scene.add(sun);
 
@@ -72,9 +73,9 @@ const colorGlass = new THREE.MeshStandardMaterial({ color: 0x2d5b7a, roughness: 
 const worldData = [
   {
     name: "Cinder City",
-    fog: 0x0b0f14,
-    sky: 0x120b10,
-    ground: 0x120b10,
+    fog: 0x121c2a,
+    sky: 0x10263b,
+    ground: 0x16283a,
     accents: [0xff4d2d, 0xffa24c],
     levels: [
       { name: "Heatline Run", time: 70, bots: 4, botSpeed: 36, spawnRate: 0.6 },
@@ -84,9 +85,9 @@ const worldData = [
   },
   {
     name: "Glacier Surge",
-    fog: 0x0b141c,
-    sky: 0x0a1a2a,
-    ground: 0x0e1f2d,
+    fog: 0x0f2332,
+    sky: 0x11425e,
+    ground: 0x16394f,
     accents: [0x20d4ff, 0x5ee1ff],
     levels: [
       { name: "Frostbite Drift", time: 80, bots: 5, botSpeed: 38, spawnRate: 0.65 },
@@ -96,9 +97,9 @@ const worldData = [
   },
   {
     name: "Solar Rift",
-    fog: 0x120c06,
-    sky: 0x2c0f07,
-    ground: 0x1c0c05,
+    fog: 0x2a1a0f,
+    sky: 0x47200f,
+    ground: 0x372212,
     accents: [0xff6b3f, 0xffc457],
     levels: [
       { name: "Helios Gate", time: 90, bots: 6, botSpeed: 40, spawnRate: 0.7 },
@@ -144,7 +145,8 @@ const state = {
   lastRampTime: 0,
   pendingAction: "next",
   airTime: 0,
-  wasAirborne: false
+  wasAirborne: false,
+  livesPulse: 0
 };
 
 const obstacles = [];
@@ -154,6 +156,7 @@ const boostPads = [];
 const bots = [];
 
 const tempVector = new THREE.Vector3();
+let lastLivesRendered = -1;
 
 class Car {
   constructor({ color = 0xff4d2d, accent = 0x10131a, isBot = false } = {}) {
@@ -476,7 +479,9 @@ function consumePowerup(powerup) {
     state.score += 150;
   }
   if (type === "life") {
+    const previousLives = state.lives;
     state.lives = Math.min(5, state.lives + 1);
+    if (state.lives > previousLives) state.livesPulse = 1;
     state.score += 250;
   }
   if (type === "slow") {
@@ -692,7 +697,7 @@ function updateHud() {
   hudWorld.textContent = getWorld().name;
   hudLevel.textContent = level.name;
   hudScore.textContent = Math.floor(state.score).toString();
-  hudLives.textContent = state.lives.toString();
+  renderLivesHud();
   hudCombo.textContent = `x${state.combo.toFixed(1)}`;
   const minutes = Math.floor(state.timeLeft / 60);
   const seconds = Math.floor(state.timeLeft % 60).toString().padStart(2, "0");
@@ -702,8 +707,31 @@ function updateHud() {
   progressBar.style.width = `${Math.min(100, (1 - state.timeLeft / level.time) * 100)}%`;
 }
 
+function renderLivesHud() {
+  if (state.lives !== lastLivesRendered || state.livesPulse !== 0) {
+    const maxLives = 5;
+    const change = state.livesPulse;
+    const lostIndex = change < 0 ? state.lives : -1;
+    const gainedIndex = change > 0 ? state.lives - 1 : -1;
+    hudHearts.innerHTML = "";
+    for (let i = 0; i < maxLives; i += 1) {
+      const heart = document.createElement("span");
+      heart.className = "heart";
+      heart.textContent = "♥";
+      if (i >= state.lives) heart.classList.add("off");
+      if (i === lostIndex) heart.classList.add("lost");
+      if (i === gainedIndex) heart.classList.add("gained");
+      hudHearts.appendChild(heart);
+    }
+    hudLives.textContent = `${state.lives}/${maxLives}`;
+    lastLivesRendered = state.lives;
+    state.livesPulse = 0;
+  }
+}
+
 function loseLife() {
   state.lives -= 1;
+  state.livesPulse = -1;
   state.score = Math.max(0, state.score - 200);
   player.setPosition(0, 0, 0);
   player.speed = 0;
@@ -735,6 +763,7 @@ function startRun(resetLives = false) {
   message.classList.remove("show");
   if (resetLives) {
     state.lives = 3;
+    state.livesPulse = 0;
     state.score = 0;
   }
   state.running = true;
