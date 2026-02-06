@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>InfernoDrift 3</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="game-wrap">
+      <canvas id="game"></canvas>
+
+      <div class="progress"><span id="progress"></span></div>
+
+      <div class="hud">
+        <div class="pill">
+          <span class="label">World</span>
+          <strong id="hud-world">—</strong>
+        </div>
+        <div class="pill">
+          <span class="label">Level</span>
+          <strong id="hud-level">—</strong>
+        </div>
+        <div class="pill">
+          <span class="label">Time</span>
+          <strong id="hud-time">0:00</strong>
+        </div>
+        <div class="pill">
+          <span class="label">Score</span>
+          <strong id="hud-score">0</strong>
+        </div>
+        <div class="pill">
+          <span class="label">Lives</span>
+          <strong id="hud-lives">3</strong>
+        </div>
+        <div class="pill">
+          <span class="label">Drift</span>
+          <strong id="hud-combo">x1</strong>
+        </div>
+      </div>
+
+      <div class="status">
+        <div class="pill">
+          <div class="label">Boost</div>
+          <div class="bar"><span id="boost-bar"></span></div>
+        </div>
+        <div class="pill">
+          <div class="label">Shield</div>
+          <div class="bar"><span id="shield-bar"></span></div>
+        </div>
+      </div>
+
+      <div class="touch-controls">
+        <button id="touch-drift">Drift</button>
+        <button id="touch-boost" class="primary">Boost</button>
+      </div>
+
+      <div class="overlay show" id="overlay">
+        <div class="panel">
+          <h1>InfernoDrift 3</h1>
+          <p class="subtitle">
+            Free-roam survival racers. Drift through neon arenas, grab powerups, launch off ramps,
+            and stay ahead of relentless hunter bots.
+          </p>
+          <div class="cta-row">
+            <button class="primary" id="start-btn">Start Ignite Run</button>
+            <button class="ghost" id="tutorial-btn">Quick Tips</button>
+          </div>
+          <div class="controls" id="tips" style="display: none;">
+            <div><span>Steer:</span> Arrow Keys or A / D</div>
+            <div><span>Throttle:</span> W / Arrow Up</div>
+            <div><span>Brake/Reverse:</span> S / Arrow Down</div>
+            <div><span>Drift:</span> Space</div>
+            <div><span>Boost:</span> Shift</div>
+            <div><span>Camera Focus:</span> C</div>
+            <div><span>Restart Level:</span> R</div>
+            <div><span>Start / Next:</span> Enter</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="overlay" id="message">
+        <div class="panel">
+          <h2 id="message-title">Level Complete</h2>
+          <p class="subtitle" id="message-body">You melted the asphalt. Ready for the next heat?</p>
+          <div class="cta-row">
+            <button class="primary" id="next-btn">Next</button>
+            <button class="ghost" id="retry-btn">Retry</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="script.js"></script>
+  </body>
+</html>
