@@ -37,7 +37,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = false;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x0b0f14, 40, 420);
+scene.fog = new THREE.Fog(0x0b0f14, 48, 620);
 
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 600);
 camera.position.set(0, 7.5, 14);
@@ -50,7 +50,7 @@ sun.position.set(18, 28, 14);
 scene.add(sun);
 
 const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x0c1016, roughness: 0.9 });
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), groundMaterial);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(1400, 1400), groundMaterial);
 ground.rotation.x = -Math.PI / 2;
 ground.position.y = -0.02;
 scene.add(ground);
@@ -59,7 +59,7 @@ const arena = new THREE.Group();
 const props = new THREE.Group();
 scene.add(arena, props);
 
-const WORLD_SIZE = 360;
+const WORLD_SIZE = 520;
 const HALF_WORLD = WORLD_SIZE / 2;
 const CAR_RADIUS = 1.4;
 const BOT_RADIUS = 1.4;
@@ -80,7 +80,8 @@ const worldData = [
     levels: [
       { name: "Heatline Run", time: 70, bots: 4, botSpeed: 36, spawnRate: 0.6 },
       { name: "Neon Harriers", time: 80, bots: 5, botSpeed: 40, spawnRate: 0.7 },
-      { name: "Ashfall Siege", time: 90, bots: 6, botSpeed: 44, spawnRate: 0.75 }
+      { name: "Ashfall Siege", time: 90, bots: 6, botSpeed: 44, spawnRate: 0.75 },
+      { name: "Molten Gauntlet", time: 100, bots: 7, botSpeed: 48, spawnRate: 0.82 }
     ]
   },
   {
@@ -92,7 +93,8 @@ const worldData = [
     levels: [
       { name: "Frostbite Drift", time: 80, bots: 5, botSpeed: 38, spawnRate: 0.65 },
       { name: "Aurora Raiders", time: 90, bots: 6, botSpeed: 42, spawnRate: 0.75 },
-      { name: "Polar Rift", time: 100, bots: 7, botSpeed: 46, spawnRate: 0.8 }
+      { name: "Polar Rift", time: 100, bots: 7, botSpeed: 46, spawnRate: 0.8 },
+      { name: "Whiteout Pursuit", time: 110, bots: 8, botSpeed: 50, spawnRate: 0.85 }
     ]
   },
   {
@@ -104,7 +106,34 @@ const worldData = [
     levels: [
       { name: "Helios Gate", time: 90, bots: 6, botSpeed: 40, spawnRate: 0.7 },
       { name: "Redline Tempest", time: 100, bots: 7, botSpeed: 46, spawnRate: 0.8 },
-      { name: "Supernova Run", time: 110, bots: 8, botSpeed: 50, spawnRate: 0.85 }
+      { name: "Supernova Run", time: 110, bots: 8, botSpeed: 50, spawnRate: 0.85 },
+      { name: "Corona Breaker", time: 120, bots: 9, botSpeed: 54, spawnRate: 0.9 }
+    ]
+  },
+  {
+    name: "Tempest Grid",
+    fog: 0x14172d,
+    sky: 0x2b2f66,
+    ground: 0x1d2450,
+    accents: [0x7bb0ff, 0x80fff1],
+    levels: [
+      { name: "Ion Relay", time: 105, bots: 7, botSpeed: 46, spawnRate: 0.82 },
+      { name: "Arc Flash Alley", time: 115, bots: 8, botSpeed: 50, spawnRate: 0.87 },
+      { name: "Stormline Apex", time: 125, bots: 9, botSpeed: 54, spawnRate: 0.91 },
+      { name: "Thunder Crown", time: 135, bots: 10, botSpeed: 58, spawnRate: 0.95 }
+    ]
+  },
+  {
+    name: "Obsidian Expanse",
+    fog: 0x120f14,
+    sky: 0x2f2134,
+    ground: 0x1c1620,
+    accents: [0xff80d0, 0xa7c0ff],
+    levels: [
+      { name: "Void Approach", time: 115, bots: 8, botSpeed: 50, spawnRate: 0.88 },
+      { name: "Phantom Causeway", time: 125, bots: 9, botSpeed: 54, spawnRate: 0.92 },
+      { name: "Nocturne Collider", time: 135, bots: 10, botSpeed: 58, spawnRate: 0.96 },
+      { name: "Abyssal Finale", time: 145, bots: 11, botSpeed: 62, spawnRate: 1.0 }
     ]
   }
 ];
@@ -357,27 +386,34 @@ function makePowerup(type) {
   return mesh;
 }
 
-function makeRamp() {
+function makeRamp(kind = "normal") {
+  const isMega = kind === "mega";
+  const baseRadius = isMega ? 10.5 : 6.2;
+  const jumpLift = isMega ? 8.8 : 4;
+  const speedKick = isMega ? 16 : 11;
   const rampGroup = new THREE.Group();
   const base = new THREE.Mesh(
-    new THREE.CylinderGeometry(6.2, 6.2, 0.45, 28),
+    new THREE.CylinderGeometry(baseRadius, baseRadius, isMega ? 0.58 : 0.45, 32),
     new THREE.MeshStandardMaterial({ color: 0x1a2028, roughness: 0.5 })
   );
-  base.position.y = 0.22;
+  base.position.y = isMega ? 0.28 : 0.22;
   const dome = new THREE.Mesh(
-    new THREE.ConeGeometry(4.8, 1.8, 28),
+    new THREE.ConeGeometry(isMega ? 7.2 : 4.8, isMega ? 2.6 : 1.8, 32),
     new THREE.MeshStandardMaterial({ color: 0xff7a45, emissive: 0x5a1e10, roughness: 0.35 })
   );
-  dome.position.y = 1.1;
+  dome.position.y = isMega ? 1.6 : 1.1;
   const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(6.5, 0.25, 10, 40),
+    new THREE.TorusGeometry(baseRadius + 0.35, isMega ? 0.35 : 0.25, 12, 46),
     new THREE.MeshStandardMaterial({ color: 0xffa24c, emissive: 0xff6b2e, emissiveIntensity: 0.9, roughness: 0.2 })
   );
   ring.rotation.x = Math.PI / 2;
-  ring.position.y = 0.38;
+  ring.position.y = isMega ? 0.5 : 0.38;
 
   rampGroup.add(base, dome, ring);
-  rampGroup.userData.radius = 6.4;
+  rampGroup.userData.radius = isMega ? 10.8 : 6.4;
+  rampGroup.userData.jumpLift = jumpLift;
+  rampGroup.userData.speedKick = speedKick;
+  rampGroup.userData.kind = kind;
   scene.add(rampGroup);
   return rampGroup;
 }
@@ -422,6 +458,29 @@ function makeBoostPad() {
   return padGroup;
 }
 
+function generateSpacedPolarPoints(count, minRadius, maxRadius, minSpacing, maxAttempts = 2200) {
+  const points = [];
+  let attempts = 0;
+  while (points.length < count && attempts < maxAttempts) {
+    attempts += 1;
+    const angle = Math.random() * Math.PI * 2;
+    const radius = THREE.MathUtils.lerp(minRadius, maxRadius, Math.pow(Math.random(), 0.85));
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    let tooClose = false;
+    for (let i = 0; i < points.length; i += 1) {
+      const dx = x - points[i].x;
+      const dz = z - points[i].z;
+      if (dx * dx + dz * dz < minSpacing * minSpacing) {
+        tooClose = true;
+        break;
+      }
+    }
+    if (!tooClose) points.push({ x, z });
+  }
+  return points;
+}
+
 function clearWorld() {
   obstacles.splice(0, obstacles.length);
   ramps.splice(0, ramps.length);
@@ -441,32 +500,29 @@ function buildWorld() {
   groundMaterial.color.setHex(world.ground);
 
   ramps.length = 0;
-  for (let i = 0; i < 18; i += 1) {
-    const ramp = makeRamp();
-    const angle = Math.random() * Math.PI * 2;
-    const radius = 45 + Math.random() * 120;
-    ramp.position.x = Math.cos(angle) * radius;
-    ramp.position.z = Math.sin(angle) * radius;
+  const rampPoints = generateSpacedPolarPoints(18, 80, HALF_WORLD - 38, 62);
+  rampPoints.forEach(({ x, z }, index) => {
+    const kind = index % 5 === 0 ? "mega" : "normal";
+    const ramp = makeRamp(kind);
+    ramp.position.set(x, 0, z);
     ramps.push(ramp);
-  }
+  });
   [
-    { x: 0, z: 40 },
-    { x: -35, z: -25 }
-  ].forEach(({ x, z }) => {
-    const ramp = makeRamp();
+    { x: 0, z: 58, kind: "normal" },
+    { x: -62, z: -44, kind: "mega" }
+  ].forEach(({ x, z, kind }) => {
+    const ramp = makeRamp(kind);
     ramp.position.set(x, 0, z);
     ramps.push(ramp);
   });
 
   boostPads.length = 0;
-  for (let i = 0; i < 12; i += 1) {
+  const padPoints = generateSpacedPolarPoints(12, 70, HALF_WORLD - 40, 58);
+  padPoints.forEach(({ x, z }) => {
     const pad = makeBoostPad();
-    const angle = Math.random() * Math.PI * 2;
-    const radius = 35 + Math.random() * 130;
-    pad.position.x = Math.cos(angle) * radius;
-    pad.position.z = Math.sin(angle) * radius;
+    pad.position.set(x, 0, z);
     boostPads.push(pad);
-  }
+  });
   [
     { x: 20, z: 20 },
     { x: -20, z: 35 }
@@ -526,7 +582,7 @@ function spawnBots() {
   const botCount = Math.max(2, Math.round(level.bots * difficultyScale));
   for (let i = 0; i < botCount; i += 1) {
     const bot = makeBot(palette[i % palette.length]);
-    bot.setPosition(THREE.MathUtils.randFloatSpread(140), 0, THREE.MathUtils.randFloatSpread(140));
+    bot.setPosition(THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.25), 0, THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.25));
     bot.maxSpeed = level.botSpeed * difficultyScale * profile.speedMultiplier;
     bot.accel = (18 + level.bots * difficultyScale) * profile.botSkill;
     bot.turnRate = 2.1 * profile.botSkill;
@@ -543,7 +599,7 @@ function spawnPowerups() {
   for (let i = 0; i < 6; i += 1) {
     const type = types[Math.floor(Math.random() * types.length)];
     const powerup = makePowerup(type);
-    powerup.position.set(THREE.MathUtils.randFloatSpread(280), 1.4, THREE.MathUtils.randFloatSpread(280));
+    powerup.position.set(THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.65), 1.4, THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.65));
     powerups.push(powerup);
   }
 }
@@ -579,7 +635,7 @@ function consumePowerup(powerup) {
     state.score += 120;
   }
 
-  powerup.position.set(THREE.MathUtils.randFloatSpread(280), 1.4, THREE.MathUtils.randFloatSpread(280));
+  powerup.position.set(THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.65), 1.4, THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.65));
   powerup.userData.type = ["boost", "shield", "life", "slow"][Math.floor(Math.random() * 4)];
   powerup.material.color.setHex({
     boost: 0x28d7ff,
@@ -704,17 +760,19 @@ function updateVerticalPhysics(car, dt) {
 
   ramps.forEach((ramp) => {
     const radius = ramp.userData.radius;
+    const jumpLift = ramp.userData.jumpLift ?? 4;
+    const speedKick = ramp.userData.speedKick ?? 11;
     const dx = car.position.x - ramp.position.x;
     const dz = car.position.z - ramp.position.z;
     const distance = Math.hypot(dx, dz);
     const ready = performance.now() - car.lastRampTime > 340;
     if (distance < radius && car.position.y <= 0.2 && ready && Math.abs(car.speed) > 2.5) {
       const centerBoost = 1 - distance / radius;
-      car.verticalVel = 10 + Math.abs(car.speed) * 0.095 + centerBoost * 4;
+      car.verticalVel = 9.2 + Math.abs(car.speed) * 0.085 + centerBoost * jumpLift;
       const currentSign = Math.sign(car.speed || 1);
-      car.speed = Math.min(car.maxSpeed * 1.2, Math.abs(car.speed) + 11) * currentSign;
+      car.speed = Math.min(car.maxSpeed * 1.35, Math.abs(car.speed) + speedKick) * currentSign;
       car.lastRampTime = performance.now();
-      if (!car.isBot) state.score += Math.round(70 + centerBoost * 70);
+      if (!car.isBot) state.score += Math.round(70 + centerBoost * (70 + jumpLift * 8));
     }
   });
 }
