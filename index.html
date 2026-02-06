@@ -43,6 +43,7 @@
           <span class="label">Drift</span>
           <strong id="hud-combo">x1</strong>
         </div>
+        <button class="pill menu-btn" id="menu-btn" type="button">Menu</button>
       </div>
 
       <div class="status">
@@ -92,6 +93,62 @@
           <div class="cta-row">
             <button class="primary" id="next-btn">Next</button>
             <button class="ghost" id="retry-btn">Retry</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="overlay" id="menu">
+        <div class="panel menu-panel">
+          <div class="menu-header">
+            <h2>InfernoDrift 3</h2>
+            <button class="ghost" id="menu-close" type="button">Close</button>
+          </div>
+          <div class="menu-tabs">
+            <button class="tab-btn active" data-tab="settings" type="button">Settings</button>
+            <button class="tab-btn" data-tab="controls" type="button">Controls</button>
+            <button class="tab-btn" data-tab="howto" type="button">How to Play</button>
+          </div>
+          <div class="menu-content">
+            <section class="tab-panel active" id="tab-settings">
+              <label class="field">
+                <span>Difficulty</span>
+                <select id="difficulty-select">
+                  <option value="casual">Casual</option>
+                  <option value="classic" selected>Classic</option>
+                  <option value="brutal">Brutal</option>
+                </select>
+              </label>
+              <label class="field toggle">
+                <span>Invert Steering</span>
+                <input id="invert-toggle" type="checkbox" />
+              </label>
+              <label class="field toggle">
+                <span>Camera Focus</span>
+                <input id="camera-toggle" type="checkbox" />
+              </label>
+              <p class="hint">Changes apply instantly. Press R to restart the current level.</p>
+            </section>
+            <section class="tab-panel" id="tab-controls">
+              <ul class="menu-list">
+                <li><strong>Steer:</strong> Arrow Keys or A / D</li>
+                <li><strong>Throttle:</strong> W / Arrow Up</li>
+                <li><strong>Brake/Reverse:</strong> S / Arrow Down</li>
+                <li><strong>Drift:</strong> Space</li>
+                <li><strong>Boost:</strong> Shift</li>
+                <li><strong>Camera Focus:</strong> C</li>
+                <li><strong>Restart Level:</strong> R</li>
+                <li><strong>Menu:</strong> Esc</li>
+              </ul>
+            </section>
+            <section class="tab-panel" id="tab-howto">
+              <ol class="menu-list">
+                <li>Stay alive until the timer ends to clear the level.</li>
+                <li>Hunter bots will chase you — dodge or bait them wide.</li>
+                <li>Hit neon ramps to launch and earn airtime bonus.</li>
+                <li>Boost pads refill boost and sling you forward.</li>
+                <li>Collect powerups: Boost, Shield, Life, or Slow.</li>
+              </ol>
+            </section>
           </div>
         </div>
       </div>

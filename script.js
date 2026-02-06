@@ -21,6 +21,14 @@ const hudLives = document.getElementById("hud-lives");
 const hudCombo = document.getElementById("hud-combo");
 const touchDrift = document.getElementById("touch-drift");
 const touchBoost = document.getElementById("touch-boost");
+const menu = document.getElementById("menu");
+const menuBtn = document.getElementById("menu-btn");
+const menuClose = document.getElementById("menu-close");
+const tabButtons = document.querySelectorAll(".tab-btn");
+const tabPanels = document.querySelectorAll(".tab-panel");
+const difficultySelect = document.getElementById("difficulty-select");
+const invertToggle = document.getElementById("invert-toggle");
+const cameraToggle = document.getElementById("camera-toggle");
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6));
@@ -111,6 +119,12 @@ const input = {
   pointerX: 0,
   pointerStartX: 0,
   focusCamera: false
+};
+
+const settings = {
+  difficulty: "classic",
+  invertSteer: false,
+  cameraFocus: false
 };
 
 const state = {
@@ -420,11 +434,17 @@ function spawnBots() {
   bots.splice(0, bots.length);
   const level = getLevel();
   const palette = getWorld().accents;
-  for (let i = 0; i < level.bots; i += 1) {
+  const difficultyScale = {
+    casual: 0.7,
+    classic: 1,
+    brutal: 1.25
+  }[settings.difficulty];
+  const botCount = Math.max(2, Math.round(level.bots * difficultyScale));
+  for (let i = 0; i < botCount; i += 1) {
     const bot = makeBot(palette[i % palette.length]);
     bot.setPosition(THREE.MathUtils.randFloatSpread(60), 0, THREE.MathUtils.randFloatSpread(60));
-    bot.maxSpeed = level.botSpeed;
-    bot.accel = 20 + level.bots;
+    bot.maxSpeed = level.botSpeed * difficultyScale;
+    bot.accel = 18 + level.bots * difficultyScale;
     bots.push(bot);
   }
 }
@@ -482,7 +502,7 @@ function consumePowerup(powerup) {
 }
 
 function updatePlayer(dt) {
-  const steer = -getSteer();
+  const steer = getSteer() * (settings.invertSteer ? -1 : 1);
   const throttle = input.throttle ? 1 : 0;
   const brake = input.brake ? 1 : 0;
   const drift = input.drift;
@@ -647,7 +667,7 @@ function updateCamera(dt) {
   const back = new THREE.Vector3(Math.sin(player.heading), 0, Math.cos(player.heading)).multiplyScalar(-12);
   const desired = cameraTarget.clone().add(back).add(new THREE.Vector3(0, 7.5, 0));
 
-  if (input.focusCamera) {
+  if (input.focusCamera || settings.cameraFocus) {
     desired.add(new THREE.Vector3(0, 4, 0));
   }
 
@@ -704,7 +724,7 @@ function getSteer() {
     const delta = (input.pointerX - input.pointerStartX) / (window.innerWidth * 0.4);
     return THREE.MathUtils.clamp(delta, -1, 1);
   }
-  return (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  return (input.left ? -1 : 0) + (input.right ? 1 : 0);
 }
 
 function angleDifference(a, b) {
@@ -821,6 +841,9 @@ window.addEventListener("keydown", (event) => {
       }
     }
   }
+  if (event.code === "Escape") {
+    menu.classList.toggle("show");
+  }
 });
 
 window.addEventListener("keyup", (event) => {
@@ -874,6 +897,36 @@ retryBtn.addEventListener("click", () => {
   } else {
     startRun(false);
   }
+});
+
+menuBtn.addEventListener("click", () => {
+  menu.classList.add("show");
+});
+menuClose.addEventListener("click", () => {
+  menu.classList.remove("show");
+});
+
+tabButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    tabButtons.forEach((btn) => btn.classList.remove("active"));
+    tabPanels.forEach((panel) => panel.classList.remove("active"));
+    button.classList.add("active");
+    const target = document.getElementById(`tab-${button.dataset.tab}`);
+    if (target) target.classList.add("active");
+  });
+});
+
+difficultySelect.addEventListener("change", (event) => {
+  settings.difficulty = event.target.value;
+  spawnBots();
+});
+
+invertToggle.addEventListener("change", (event) => {
+  settings.invertSteer = event.target.checked;
+});
+
+cameraToggle.addEventListener("change", (event) => {
+  settings.cameraFocus = event.target.checked;
 });
 
 resetLevel();
