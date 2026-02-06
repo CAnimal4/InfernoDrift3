@@ -128,12 +128,15 @@ const state = {
   elapsed: 0,
   heat: 0,
   lastRampTime: 0,
-  pendingAction: "next"
+  pendingAction: "next",
+  airTime: 0,
+  wasAirborne: false
 };
 
 const obstacles = [];
 const ramps = [];
 const powerups = [];
+const boostPads = [];
 const bots = [];
 
 const tempVector = new THREE.Vector3();
@@ -286,11 +289,28 @@ function makeBarrier(x, z, width, depth) {
   obstacles.push({ mesh, size: new THREE.Vector3(width, 2, depth) });
 }
 
+function makeBoostPad() {
+  const padGeo = new THREE.BoxGeometry(6, 0.25, 6);
+  const padMat = new THREE.MeshStandardMaterial({
+    color: 0x1ad7ff,
+    emissive: 0x0b8fb8,
+    emissiveIntensity: 0.8,
+    roughness: 0.4
+  });
+  const pad = new THREE.Mesh(padGeo, padMat);
+  pad.position.y = 0.08;
+  pad.userData.size = new THREE.Vector3(6, 0.25, 6);
+  scene.add(pad);
+  return pad;
+}
+
 function clearWorld() {
   obstacles.splice(0, obstacles.length);
   ramps.splice(0, ramps.length);
   powerups.forEach((powerup) => scene.remove(powerup));
   powerups.splice(0, powerups.length);
+  boostPads.forEach((pad) => scene.remove(pad));
+  boostPads.splice(0, boostPads.length);
   arena.clear();
   props.clear();
 }
@@ -305,23 +325,23 @@ function buildWorld() {
   const accentColors = world.accents;
   for (let x = -90; x <= 90; x += 20) {
     for (let z = -90; z <= 90; z += 20) {
-      if (Math.abs(x) < 40 && Math.abs(z) < 40) continue;
-      if (Math.random() < 0.6) continue;
+      if (Math.abs(x) < 65 && Math.abs(z) < 65) continue;
+      if (Math.random() < 0.8) continue;
       const height = 6 + Math.random() * 18;
       const color = accentColors[Math.floor(Math.random() * accentColors.length)];
       makeBuilding(x + Math.random() * 4, z + Math.random() * 4, height, color);
     }
   }
 
-  for (let i = 0; i < 6; i += 1) {
+  for (let i = 0; i < 3; i += 1) {
     makeBarrier(THREE.MathUtils.randFloatSpread(120), THREE.MathUtils.randFloatSpread(120), 8, 3);
   }
 
   ramps.length = 0;
-  for (let i = 0; i < 4; i += 1) {
+  for (let i = 0; i < 10; i += 1) {
     const ramp = makeRamp();
-    ramp.position.x = THREE.MathUtils.randFloatSpread(120);
-    ramp.position.z = THREE.MathUtils.randFloatSpread(120);
+    ramp.position.x = THREE.MathUtils.randFloatSpread(150);
+    ramp.position.z = THREE.MathUtils.randFloatSpread(150);
     ramps.push(ramp);
   }
 
@@ -332,6 +352,14 @@ function buildWorld() {
     );
     tower.position.set(THREE.MathUtils.randFloatSpread(160), 6, THREE.MathUtils.randFloatSpread(160));
     arena.add(tower);
+  }
+
+  boostPads.length = 0;
+  for (let i = 0; i < 6; i += 1) {
+    const pad = makeBoostPad();
+    pad.position.x = THREE.MathUtils.randFloatSpread(160);
+    pad.position.z = THREE.MathUtils.randFloatSpread(160);
+    boostPads.push(pad);
   }
 }
 
@@ -351,6 +379,8 @@ function resetLevel() {
   state.invincible = 0;
   state.elapsed = 0;
   state.heat = 0;
+  state.airTime = 0;
+  state.wasAirborne = false;
   const level = getLevel();
   state.timeLeft = level.time;
 
@@ -484,6 +514,18 @@ function updateVerticalPhysics(car, dt) {
   if (car.position.y <= 0) {
     car.position.y = 0;
     car.verticalVel = 0;
+    if (!car.isBot && state.wasAirborne) {
+      const bonus = Math.min(2.5, state.airTime);
+      if (bonus > 0.2) {
+        state.score += Math.round(120 * bonus);
+        state.boost = Math.min(1, state.boost + bonus * 0.15);
+      }
+      state.airTime = 0;
+      state.wasAirborne = false;
+    }
+  } else if (!car.isBot) {
+    state.airTime += dt;
+    state.wasAirborne = true;
   }
 
   ramps.forEach((ramp) => {
@@ -492,8 +534,8 @@ function updateVerticalPhysics(car, dt) {
     const withinZ = Math.abs(car.position.z - ramp.position.z) < size.z * 0.5;
     const ready = performance.now() - state.lastRampTime > 600;
     if (withinX && withinZ && car.position.y <= 0.15 && ready && Math.abs(car.speed) > 6) {
-      car.verticalVel = 10 + Math.abs(car.speed) * 0.1;
-      car.speed = Math.min(car.maxSpeed, car.speed + 10);
+      car.verticalVel = 12 + Math.abs(car.speed) * 0.12;
+      car.speed = Math.min(car.maxSpeed, car.speed + 12);
       state.lastRampTime = performance.now();
       if (!car.isBot) state.score += 80;
     }
@@ -568,6 +610,19 @@ function updatePowerupCollisions() {
   });
 }
 
+function updateBoostPads() {
+  boostPads.forEach((pad) => {
+    const size = pad.userData.size;
+    const withinX = Math.abs(player.position.x - pad.position.x) < size.x * 0.5 + 0.8;
+    const withinZ = Math.abs(player.position.z - pad.position.z) < size.z * 0.5 + 0.8;
+    if (withinX && withinZ && player.position.y <= 0.2) {
+      player.speed = Math.min(player.maxSpeed * 1.2, player.speed + 14);
+      state.boost = Math.min(1, state.boost + 0.2);
+      state.score += 40;
+    }
+  });
+}
+
 function updateCamera(dt) {
   const cameraTarget = player.position.clone();
   const back = new THREE.Vector3(Math.sin(player.heading), 0, Math.cos(player.heading)).multiplyScalar(-12);
@@ -627,10 +682,10 @@ function loseLife() {
 
 function getSteer() {
   if (input.pointerActive) {
-    const delta = (input.pointerStartX - input.pointerX) / (window.innerWidth * 0.4);
+    const delta = (input.pointerX - input.pointerStartX) / (window.innerWidth * 0.4);
     return THREE.MathUtils.clamp(delta, -1, 1);
   }
-  return (input.left ? 1 : 0) - (input.right ? 1 : 0);
+  return (input.right ? 1 : 0) - (input.left ? 1 : 0);
 }
 
 function angleDifference(a, b) {
@@ -706,6 +761,7 @@ function animate(now) {
     bots.forEach((bot) => updateObstacles(bot));
     updatePowerups(dt);
     updatePowerupCollisions();
+    updateBoostPads();
 
     if (state.timeLeft <= 0) {
       completeLevel();
