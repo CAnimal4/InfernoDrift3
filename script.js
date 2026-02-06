@@ -68,6 +68,8 @@ const CAR_RADIUS = 1.4;
 const BOT_RADIUS = 1.4;
 const POWERUP_RADIUS = 1.6;
 const GRAVITY = -20;
+const PLAYER_SPAWN_X = 0;
+const PLAYER_SPAWN_Z = -90;
 
 const colorWhite = new THREE.MeshStandardMaterial({ color: 0xfaf4ea, roughness: 0.4 });
 const colorBlack = new THREE.MeshStandardMaterial({ color: 0x10131a, roughness: 0.6 });
@@ -288,13 +290,16 @@ class Car {
     this.target = null;
     this.lastRampTime = 0;
     this.aiBurstCooldown = 0;
+    this.prevPosition = new THREE.Vector3();
 
     this.group.position.copy(this.position);
+    this.prevPosition.copy(this.position);
   }
 
   setPosition(x, y, z) {
     this.position.set(x, y, z);
     this.group.position.copy(this.position);
+    this.prevPosition.copy(this.position);
   }
 
   updateWheels(speed) {
@@ -304,6 +309,7 @@ class Car {
   }
 
   update(dt) {
+    this.prevPosition.copy(this.position);
     this.position.addScaledVector(this.velocity, dt);
     this.group.position.copy(this.position);
     this.group.rotation.y = this.heading;
@@ -328,7 +334,8 @@ function getDifficultyProfile() {
       reaction: 1.9,
       burstChance: 0.06,
       speedMultiplier: 0.92,
-      heatRamp: 0.75
+      heatRamp: 0.75,
+      teamwork: 0.15
     },
     classic: {
       botSkill: 0.92,
@@ -336,7 +343,8 @@ function getDifficultyProfile() {
       reaction: 2.4,
       burstChance: 0.11,
       speedMultiplier: 1,
-      heatRamp: 1
+      heatRamp: 1,
+      teamwork: 0.62
     },
     brutal: {
       botSkill: 1.12,
@@ -344,9 +352,19 @@ function getDifficultyProfile() {
       reaction: 3.1,
       burstChance: 0.18,
       speedMultiplier: 1.12,
-      heatRamp: 1.4
+      heatRamp: 1.4,
+      teamwork: 0.9
     }
   }[settings.difficulty];
+}
+
+function getBotRole(index, count, teamwork) {
+  if (teamwork < 0.3) return "chase";
+  if (index === 0) return "intercept";
+  if (index % 4 === 1) return "left_flank";
+  if (index % 4 === 2) return "right_flank";
+  if (index === count - 1) return "cutoff";
+  return "pressure";
 }
 
 function createFxPool() {
@@ -417,29 +435,30 @@ function makePowerup(type) {
 
 function makeRamp(kind = "normal") {
   const isMega = kind === "mega";
-  const baseRadius = isMega ? 10.5 : 6.2;
-  const jumpLift = isMega ? 8.8 : 4;
-  const speedKick = isMega ? 16 : 11;
+  const isTitan = kind === "titan";
+  const baseRadius = isTitan ? 21 : isMega ? 10.5 : 6.2;
+  const jumpLift = isTitan ? 16 : isMega ? 8.8 : 4;
+  const speedKick = isTitan ? 28 : isMega ? 16 : 11;
   const rampGroup = new THREE.Group();
   const base = new THREE.Mesh(
-    new THREE.CylinderGeometry(baseRadius, baseRadius, isMega ? 0.58 : 0.45, 32),
+    new THREE.CylinderGeometry(baseRadius, baseRadius, isTitan ? 0.9 : isMega ? 0.58 : 0.45, 32),
     new THREE.MeshStandardMaterial({ color: 0x1a2028, roughness: 0.5 })
   );
-  base.position.y = isMega ? 0.28 : 0.22;
+  base.position.y = isTitan ? 0.46 : isMega ? 0.28 : 0.22;
   const dome = new THREE.Mesh(
-    new THREE.ConeGeometry(isMega ? 7.2 : 4.8, isMega ? 2.6 : 1.8, 32),
+    new THREE.ConeGeometry(isTitan ? 14.2 : isMega ? 7.2 : 4.8, isTitan ? 5.4 : isMega ? 2.6 : 1.8, 32),
     new THREE.MeshStandardMaterial({ color: 0xff7a45, emissive: 0x5a1e10, roughness: 0.35 })
   );
-  dome.position.y = isMega ? 1.6 : 1.1;
+  dome.position.y = isTitan ? 3.2 : isMega ? 1.6 : 1.1;
   const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(baseRadius + 0.35, isMega ? 0.35 : 0.25, 12, 46),
+    new THREE.TorusGeometry(baseRadius + 0.35, isTitan ? 0.5 : isMega ? 0.35 : 0.25, 12, 46),
     new THREE.MeshStandardMaterial({ color: 0xffa24c, emissive: 0xff6b2e, emissiveIntensity: 0.9, roughness: 0.2 })
   );
   ring.rotation.x = Math.PI / 2;
-  ring.position.y = isMega ? 0.5 : 0.38;
+  ring.position.y = isTitan ? 0.78 : isMega ? 0.5 : 0.38;
 
   rampGroup.add(base, dome, ring);
-  rampGroup.userData.radius = isMega ? 10.8 : 6.4;
+  rampGroup.userData.radius = isTitan ? 22 : isMega ? 10.8 : 6.4;
   rampGroup.userData.jumpLift = jumpLift;
   rampGroup.userData.speedKick = speedKick;
   rampGroup.userData.kind = kind;
@@ -529,6 +548,10 @@ function buildWorld() {
   groundMaterial.color.setHex(world.ground);
 
   ramps.length = 0;
+  const titanRamp = makeRamp("titan");
+  titanRamp.position.set(0, 0, 0);
+  ramps.push(titanRamp);
+
   const rampPoints = generateSpacedPolarPoints(18, 80, HALF_WORLD - 38, 62);
   rampPoints.forEach(({ x, z }, index) => {
     const kind = index % 5 === 0 ? "mega" : "normal";
@@ -537,7 +560,7 @@ function buildWorld() {
     ramps.push(ramp);
   });
   [
-    { x: 0, z: 58, kind: "normal" },
+    { x: 0, z: 92, kind: "normal" },
     { x: -62, z: -44, kind: "mega" }
   ].forEach(({ x, z, kind }) => {
     const ramp = makeRamp(kind);
@@ -583,7 +606,7 @@ function resetLevel() {
   const level = getLevel();
   state.timeLeft = level.time;
 
-  player.setPosition(0, 0, 0);
+  player.setPosition(PLAYER_SPAWN_X, 0, PLAYER_SPAWN_Z);
   player.velocity.set(0, 0, 0);
   player.speed = 0;
   player.heading = 0;
@@ -791,10 +814,19 @@ function updateVerticalPhysics(car, dt) {
     const radius = ramp.userData.radius;
     const jumpLift = ramp.userData.jumpLift ?? 4;
     const speedKick = ramp.userData.speedKick ?? 11;
+    const prevDistance = Math.hypot(car.prevPosition.x - ramp.position.x, car.prevPosition.z - ramp.position.z);
     const currentDistance = Math.hypot(car.position.x - ramp.position.x, car.position.z - ramp.position.z);
     const nextX = car.position.x + car.velocity.x * dt;
     const nextZ = car.position.z + car.velocity.z * dt;
     const nextDistance = Math.hypot(nextX - ramp.position.x, nextZ - ramp.position.z);
+    const sweptFromPrev = pointSegmentDistance2D(
+      ramp.position.x,
+      ramp.position.z,
+      car.prevPosition.x,
+      car.prevPosition.z,
+      car.position.x,
+      car.position.z
+    );
     const sweptDistance = pointSegmentDistance2D(
       ramp.position.x,
       ramp.position.z,
@@ -804,11 +836,11 @@ function updateVerticalPhysics(car, dt) {
       nextZ
     );
     const speedAbs = Math.abs(car.speed);
-    const speedMargin = Math.min(5.2, speedAbs * 0.07);
+    const speedMargin = Math.min(9.5, speedAbs * 0.13);
     const triggerRadius = radius + speedMargin;
-    const closestDistance = Math.min(currentDistance, nextDistance, sweptDistance);
-    const ready = performance.now() - car.lastRampTime > 220;
-    if (closestDistance < triggerRadius && car.position.y <= 0.32 && ready && speedAbs > 1.8) {
+    const closestDistance = Math.min(prevDistance, currentDistance, nextDistance, sweptFromPrev, sweptDistance);
+    const ready = performance.now() - car.lastRampTime > 120;
+    if (closestDistance < triggerRadius && car.position.y <= 0.55 && ready && speedAbs > 1.5) {
       const centerBoost = 1 - THREE.MathUtils.clamp(closestDistance / triggerRadius, 0, 1);
       car.verticalVel = 9.2 + Math.abs(car.speed) * 0.085 + centerBoost * jumpLift;
       const currentSign = Math.sign(car.speed || 1);
@@ -823,6 +855,16 @@ function updateBots(dt) {
   const level = getLevel();
   const profile = getDifficultyProfile();
   const targetSpeed = (level.botSpeed + state.heat * 8 * profile.heatRamp) * profile.speedMultiplier;
+  if (bots.length === 0) return;
+
+  const packCenter = new THREE.Vector3();
+  for (let i = 0; i < bots.length; i += 1) {
+    packCenter.add(bots[i].position);
+  }
+  packCenter.multiplyScalar(1 / bots.length);
+
+  const playerForward = new THREE.Vector3(Math.sin(player.heading), 0, Math.cos(player.heading));
+  const playerRight = new THREE.Vector3(Math.cos(player.heading), 0, -Math.sin(player.heading));
 
   bots.forEach((bot, index) => {
     bot.aiBurstCooldown = Math.max(0, bot.aiBurstCooldown - dt);
@@ -830,23 +872,38 @@ function updateBots(dt) {
     const predicted = tempVector
       .copy(player.position)
       .addScaledVector(player.velocity, predictionTime)
-      .addScaledVector(new THREE.Vector3(Math.sin(player.heading), 0, Math.cos(player.heading)), 2.8);
+      .addScaledVector(playerForward, 2.8 + Math.abs(player.speed) * 0.04);
 
-    const toPlayer = tempVectorB.copy(predicted).sub(bot.position);
-    const distance = toPlayer.length();
-    const desiredHeading = Math.atan2(toPlayer.x, toPlayer.z);
+    const role = getBotRole(index, bots.length, profile.teamwork);
+    const roleTarget = tempVectorB.copy(predicted);
+    const flankOffset = 12 + profile.teamwork * 10;
+    if (role === "intercept") roleTarget.addScaledVector(playerForward, 11);
+    if (role === "left_flank") roleTarget.addScaledVector(playerRight, -flankOffset).addScaledVector(playerForward, 4);
+    if (role === "right_flank") roleTarget.addScaledVector(playerRight, flankOffset).addScaledVector(playerForward, 4);
+    if (role === "cutoff") roleTarget.addScaledVector(playerForward, 18 + Math.abs(player.speed) * 0.24);
+    if (role === "pressure") roleTarget.addScaledVector(playerForward, 6);
+
+    // Team convergence keeps bots coordinated into a moving net on classic/brutal.
+    roleTarget.addScaledVector(tempVectorC.copy(packCenter).sub(bot.position), profile.teamwork * 0.18);
+
+    const toTarget = tempVectorC.copy(roleTarget).sub(bot.position);
+    const distance = toTarget.length();
+    const desiredHeading = Math.atan2(toTarget.x, toTarget.z);
     let steer = THREE.MathUtils.clamp(angleDifference(bot.heading, desiredHeading), -1, 1);
     steer *= profile.botSkill;
 
-    // Simple local separation prevents all bots stacking on one vector.
+    let nearestBotDistance = 999;
+    // Local separation keeps bots from stacking and helps flanking spread.
     for (let j = 0; j < bots.length; j += 1) {
       if (j === index) continue;
       const other = bots[j];
       const dx = bot.position.x - other.position.x;
       const dz = bot.position.z - other.position.z;
       const d2 = dx * dx + dz * dz;
+      const d = Math.sqrt(d2);
+      if (d < nearestBotDistance) nearestBotDistance = d;
       if (d2 > 0.01 && d2 < 36) {
-        steer += (dx - dz) * 0.003;
+        steer += (dx - dz) * 0.0045;
       }
     }
     steer = THREE.MathUtils.clamp(steer, -1, 1);
@@ -854,20 +911,31 @@ function updateBots(dt) {
     bot.heading += steer * bot.turnRate * dt * profile.reaction;
     bot.moveHeading = THREE.MathUtils.lerp(bot.moveHeading, bot.heading, (1.9 + profile.botSkill) * dt);
 
-    const closePressure = THREE.MathUtils.clamp((55 - distance) / 55, 0, 1);
+    const desiredRange =
+      role === "cutoff" ? 20 : role === "left_flank" || role === "right_flank" ? 14 : role === "intercept" ? 9 : 11;
+    const rangeError = distance - desiredRange;
+    let throttleFactor = THREE.MathUtils.clamp(rangeError / 26 + 0.55, 0.18, 1.28);
+    if (distance < desiredRange * 0.8) throttleFactor *= 0.62;
+    if (nearestBotDistance < 7) throttleFactor *= 0.7;
+
     let speedBoost = distance > 50 ? 1.28 : 1;
-    if (bot.aiBurstCooldown <= 0 && Math.random() < profile.burstChance * dt * 12) {
+    if (bot.aiBurstCooldown <= 0 && distance > desiredRange * 1.15 && Math.random() < profile.burstChance * dt * 12) {
       bot.aiBurstCooldown = THREE.MathUtils.randFloat(1.1, 2.1);
       speedBoost += 0.28;
     }
-    bot.speed += bot.accel * dt * (0.5 + closePressure * 0.55);
-    bot.speed = Math.min(targetSpeed * speedBoost, bot.maxSpeed + state.heat * 6.5 * profile.heatRamp);
+    bot.speed += bot.accel * dt * throttleFactor;
+    if (distance < desiredRange * 0.65) {
+      bot.speed *= 1 - dt * 0.9;
+    }
+    const roleCap =
+      role === "cutoff" ? 1.2 : role === "left_flank" || role === "right_flank" ? 1.12 : role === "intercept" ? 1.08 : 1;
+    bot.speed = Math.min(targetSpeed * speedBoost * roleCap, bot.maxSpeed + state.heat * 6.5 * profile.heatRamp);
 
     const forward = tempVectorC.set(Math.sin(bot.moveHeading), 0, Math.cos(bot.moveHeading));
     bot.velocity.copy(forward).multiplyScalar(bot.speed);
 
-    if (index % 2 === 0 && distance < 16) {
-      bot.velocity.add(new THREE.Vector3(Math.cos(bot.heading), 0, -Math.sin(bot.heading)).multiplyScalar(5.5 * profile.botSkill));
+    if (index % 2 === 0 && distance < 18) {
+      bot.velocity.add(new THREE.Vector3(Math.cos(bot.heading), 0, -Math.sin(bot.heading)).multiplyScalar(6 * profile.botSkill));
     }
 
     updateVerticalPhysics(bot, dt);
@@ -955,71 +1023,103 @@ function updateDifficulty(dt) {
   }
 }
 
-function worldToMinimap(x, z, size, padding) {
-  const usable = size - padding * 2;
-  const nx = (x + HALF_WORLD) / WORLD_SIZE;
-  const nz = (z + HALF_WORLD) / WORLD_SIZE;
-  return {
-    x: padding + THREE.MathUtils.clamp(nx, 0, 1) * usable,
-    y: padding + THREE.MathUtils.clamp(nz, 0, 1) * usable
-  };
-}
-
 function drawMinimap() {
   if (!minimapCtx || !minimapCanvas) return;
   const size = minimapCanvas.width;
   const pad = 10;
+  const center = size * 0.5;
+  const mapRadius = center - pad;
+  const scale = mapRadius / HALF_WORLD;
+  const cos = Math.cos(-player.heading);
+  const sin = Math.sin(-player.heading);
+
+  const project = (wx, wz) => {
+    const dx = wx - player.position.x;
+    const dz = wz - player.position.z;
+    const rx = dx * cos - dz * sin;
+    const rz = dx * sin + dz * cos;
+    return {
+      x: center + rx * scale,
+      y: center - rz * scale,
+      inRange: rx * rx + rz * rz <= HALF_WORLD * HALF_WORLD
+    };
+  };
+
+  const drawHeadingMarker = (x, y, heading, color, sizePx) => {
+    const rel = heading - player.heading;
+    const fx = Math.sin(rel);
+    const fy = Math.cos(rel);
+    minimapCtx.fillStyle = color;
+    minimapCtx.beginPath();
+    minimapCtx.moveTo(x + fx * sizePx, y - fy * sizePx);
+    minimapCtx.lineTo(x - fy * (sizePx * 0.58), y - fx * (sizePx * 0.58));
+    minimapCtx.lineTo(x + fy * (sizePx * 0.58), y + fx * (sizePx * 0.58));
+    minimapCtx.closePath();
+    minimapCtx.fill();
+  };
 
   minimapCtx.clearRect(0, 0, size, size);
   minimapCtx.fillStyle = "rgba(6, 12, 20, 0.96)";
   minimapCtx.fillRect(0, 0, size, size);
 
+  minimapCtx.save();
+  minimapCtx.beginPath();
+  minimapCtx.arc(center, center, mapRadius, 0, Math.PI * 2);
+  minimapCtx.clip();
+
   minimapCtx.strokeStyle = "rgba(123, 161, 199, 0.75)";
   minimapCtx.lineWidth = 1;
-  minimapCtx.strokeRect(pad, pad, size - pad * 2, size - pad * 2);
+  minimapCtx.strokeRect(center - mapRadius, center - mapRadius, mapRadius * 2, mapRadius * 2);
 
   minimapCtx.strokeStyle = "rgba(123, 161, 199, 0.28)";
-  const step = (size - pad * 2) / 4;
+  const step = (mapRadius * 2) / 4;
   for (let i = 1; i < 4; i += 1) {
-    const p = pad + step * i;
+    const p = center - mapRadius + step * i;
     minimapCtx.beginPath();
-    minimapCtx.moveTo(p, pad);
-    minimapCtx.lineTo(p, size - pad);
+    minimapCtx.moveTo(p, center - mapRadius);
+    minimapCtx.lineTo(p, center + mapRadius);
     minimapCtx.stroke();
     minimapCtx.beginPath();
-    minimapCtx.moveTo(pad, p);
-    minimapCtx.lineTo(size - pad, p);
+    minimapCtx.moveTo(center - mapRadius, p);
+    minimapCtx.lineTo(center + mapRadius, p);
     minimapCtx.stroke();
   }
 
-  minimapCtx.fillStyle = "rgba(255, 171, 92, 0.92)";
+  minimapCtx.strokeStyle = "rgba(135, 185, 228, 0.55)";
+  minimapCtx.lineWidth = 1.2;
+  const worldCorners = [
+    project(-HALF_WORLD, -HALF_WORLD),
+    project(HALF_WORLD, -HALF_WORLD),
+    project(HALF_WORLD, HALF_WORLD),
+    project(-HALF_WORLD, HALF_WORLD)
+  ];
+  minimapCtx.beginPath();
+  minimapCtx.moveTo(worldCorners[0].x, worldCorners[0].y);
+  for (let i = 1; i < worldCorners.length; i += 1) {
+    minimapCtx.lineTo(worldCorners[i].x, worldCorners[i].y);
+  }
+  minimapCtx.closePath();
+  minimapCtx.stroke();
+
+  minimapCtx.fillStyle = "rgba(255, 171, 92, 0.94)";
   ramps.forEach((ramp) => {
-    const p = worldToMinimap(ramp.position.x, ramp.position.z, size, pad);
-    const r = ramp.userData.kind === "mega" ? 2.9 : 2;
+    const p = project(ramp.position.x, ramp.position.z);
+    if (!p.inRange) return;
+    const r = ramp.userData.kind === "titan" ? 4.2 : ramp.userData.kind === "mega" ? 3 : 2;
     minimapCtx.beginPath();
     minimapCtx.arc(p.x, p.y, r, 0, Math.PI * 2);
     minimapCtx.fill();
   });
 
-  minimapCtx.fillStyle = "rgba(255, 93, 93, 0.95)";
   bots.forEach((bot) => {
-    const p = worldToMinimap(bot.position.x, bot.position.z, size, pad);
-    minimapCtx.beginPath();
-    minimapCtx.arc(p.x, p.y, 2.2, 0, Math.PI * 2);
-    minimapCtx.fill();
+    const p = project(bot.position.x, bot.position.z);
+    if (!p.inRange) return;
+    drawHeadingMarker(p.x, p.y, bot.heading, "rgba(255, 98, 98, 0.95)", 4.2);
   });
 
-  const playerPoint = worldToMinimap(player.position.x, player.position.z, size, pad);
-  const heading = player.heading;
-  const dirX = Math.sin(heading);
-  const dirY = Math.cos(heading);
-  minimapCtx.fillStyle = "#7effff";
-  minimapCtx.beginPath();
-  minimapCtx.moveTo(playerPoint.x + dirX * 6, playerPoint.y + dirY * 6);
-  minimapCtx.lineTo(playerPoint.x - dirY * 3.8, playerPoint.y + dirX * 3.8);
-  minimapCtx.lineTo(playerPoint.x + dirY * 3.8, playerPoint.y - dirX * 3.8);
-  minimapCtx.closePath();
-  minimapCtx.fill();
+  drawHeadingMarker(center, center, player.heading, "#7effff", 6.4);
+
+  minimapCtx.restore();
 }
 
 function updateHud() {
@@ -1065,7 +1165,7 @@ function loseLife() {
   state.lives -= 1;
   state.livesPulse = -1;
   state.score = Math.max(0, state.score - 200);
-  player.setPosition(0, 0, 0);
+  player.setPosition(PLAYER_SPAWN_X, 0, PLAYER_SPAWN_Z);
   player.speed = 0;
   player.velocity.set(0, 0, 0);
   player.heading = 0;
