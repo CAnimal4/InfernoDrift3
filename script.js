@@ -258,14 +258,27 @@ function makePowerup(type) {
 }
 
 function makeRamp() {
-  const rampGeo = new THREE.BoxGeometry(6, 0.6, 8);
-  const rampMat = new THREE.MeshStandardMaterial({ color: 0x202832, roughness: 0.6 });
+  const rampGroup = new THREE.Group();
+  const rampGeo = new THREE.BoxGeometry(7.5, 0.7, 10);
+  const rampMat = new THREE.MeshStandardMaterial({ color: 0x1a2028, roughness: 0.55 });
   const ramp = new THREE.Mesh(rampGeo, rampMat);
-  ramp.rotation.x = -Math.PI / 7;
+  ramp.rotation.x = -Math.PI / 6.5;
   ramp.position.y = 0.35;
-  ramp.userData.size = new THREE.Vector3(6, 0.6, 8);
-  scene.add(ramp);
-  return ramp;
+
+  const stripGeo = new THREE.BoxGeometry(1.2, 0.08, 8);
+  const stripMat = new THREE.MeshStandardMaterial({
+    color: 0xff7a45,
+    emissive: 0xff5a2a,
+    emissiveIntensity: 0.9,
+    roughness: 0.2
+  });
+  const strip = new THREE.Mesh(stripGeo, stripMat);
+  strip.position.set(0, 0.3, -0.2);
+
+  rampGroup.add(ramp, strip);
+  rampGroup.userData.size = new THREE.Vector3(7.5, 0.7, 10);
+  scene.add(rampGroup);
+  return rampGroup;
 }
 
 function makeBuilding(x, z, height, color) {
@@ -300,6 +313,16 @@ function makeBoostPad() {
   const pad = new THREE.Mesh(padGeo, padMat);
   pad.position.y = 0.08;
   pad.userData.size = new THREE.Vector3(6, 0.25, 6);
+  const beaconGeo = new THREE.CylinderGeometry(0.25, 0.35, 4, 8);
+  const beaconMat = new THREE.MeshStandardMaterial({
+    color: 0x27f2ff,
+    emissive: 0x27f2ff,
+    emissiveIntensity: 1,
+    roughness: 0.2
+  });
+  const beacon = new THREE.Mesh(beaconGeo, beaconMat);
+  beacon.position.y = 2.2;
+  pad.add(beacon);
   scene.add(pad);
   return pad;
 }
@@ -322,45 +345,41 @@ function buildWorld() {
   scene.background = new THREE.Color(world.sky);
   groundMaterial.color.setHex(world.ground);
 
-  const accentColors = world.accents;
-  for (let x = -90; x <= 90; x += 20) {
-    for (let z = -90; z <= 90; z += 20) {
-      if (Math.abs(x) < 65 && Math.abs(z) < 65) continue;
-      if (Math.random() < 0.8) continue;
-      const height = 6 + Math.random() * 18;
-      const color = accentColors[Math.floor(Math.random() * accentColors.length)];
-      makeBuilding(x + Math.random() * 4, z + Math.random() * 4, height, color);
-    }
-  }
-
-  for (let i = 0; i < 3; i += 1) {
-    makeBarrier(THREE.MathUtils.randFloatSpread(120), THREE.MathUtils.randFloatSpread(120), 8, 3);
-  }
-
   ramps.length = 0;
-  for (let i = 0; i < 10; i += 1) {
+  for (let i = 0; i < 12; i += 1) {
     const ramp = makeRamp();
-    ramp.position.x = THREE.MathUtils.randFloatSpread(150);
-    ramp.position.z = THREE.MathUtils.randFloatSpread(150);
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 30 + Math.random() * 70;
+    ramp.position.x = Math.cos(angle) * radius;
+    ramp.position.z = Math.sin(angle) * radius;
     ramps.push(ramp);
   }
-
-  for (let i = 0; i < 6; i += 1) {
-    const tower = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.4, 2.6, 12 + Math.random() * 12, 6),
-      new THREE.MeshStandardMaterial({ color: accentColors[i % accentColors.length], roughness: 0.8 })
-    );
-    tower.position.set(THREE.MathUtils.randFloatSpread(160), 6, THREE.MathUtils.randFloatSpread(160));
-    arena.add(tower);
-  }
+  [
+    { x: 0, z: 40 },
+    { x: -35, z: -25 }
+  ].forEach(({ x, z }) => {
+    const ramp = makeRamp();
+    ramp.position.set(x, 0, z);
+    ramps.push(ramp);
+  });
 
   boostPads.length = 0;
-  for (let i = 0; i < 6; i += 1) {
+  for (let i = 0; i < 8; i += 1) {
     const pad = makeBoostPad();
-    pad.position.x = THREE.MathUtils.randFloatSpread(160);
-    pad.position.z = THREE.MathUtils.randFloatSpread(160);
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 20 + Math.random() * 80;
+    pad.position.x = Math.cos(angle) * radius;
+    pad.position.z = Math.sin(angle) * radius;
     boostPads.push(pad);
   }
+  [
+    { x: 20, z: 20 },
+    { x: -20, z: 35 }
+  ].forEach(({ x, z }) => {
+    const pad = makeBoostPad();
+    pad.position.set(x, 0, z);
+    boostPads.push(pad);
+  });
 }
 
 function getWorld() {
@@ -463,7 +482,7 @@ function consumePowerup(powerup) {
 }
 
 function updatePlayer(dt) {
-  const steer = getSteer();
+  const steer = -getSteer();
   const throttle = input.throttle ? 1 : 0;
   const brake = input.brake ? 1 : 0;
   const drift = input.drift;
@@ -533,7 +552,7 @@ function updateVerticalPhysics(car, dt) {
     const withinX = Math.abs(car.position.x - ramp.position.x) < size.x * 0.5;
     const withinZ = Math.abs(car.position.z - ramp.position.z) < size.z * 0.5;
     const ready = performance.now() - state.lastRampTime > 600;
-    if (withinX && withinZ && car.position.y <= 0.15 && ready && Math.abs(car.speed) > 6) {
+    if (withinX && withinZ && car.position.y <= 0.15 && ready && Math.abs(car.speed) > 4) {
       car.verticalVel = 12 + Math.abs(car.speed) * 0.12;
       car.speed = Math.min(car.maxSpeed, car.speed + 12);
       state.lastRampTime = performance.now();
