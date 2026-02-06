@@ -142,11 +142,11 @@ const state = {
   timeLeft: 0,
   elapsed: 0,
   heat: 0,
-  lastRampTime: 0,
   pendingAction: "next",
   airTime: 0,
   wasAirborne: false,
-  livesPulse: 0
+  livesPulse: 0,
+  steerSmoothed: 0
 };
 
 const obstacles = [];
@@ -156,7 +156,11 @@ const boostPads = [];
 const bots = [];
 
 const tempVector = new THREE.Vector3();
+const tempVectorB = new THREE.Vector3();
+const tempVectorC = new THREE.Vector3();
 let lastLivesRendered = -1;
+const FX_POOL_SIZE = 160;
+const fxPool = [];
 
 class Car {
   constructor({ color = 0xff4d2d, accent = 0x10131a, isBot = false } = {}) {
@@ -224,6 +228,8 @@ class Car {
     this.isBot = isBot;
     this.boosted = false;
     this.target = null;
+    this.lastRampTime = 0;
+    this.aiBurstCooldown = 0;
 
     this.group.position.copy(this.position);
   }
@@ -254,6 +260,83 @@ function makeBot(color) {
   const bot = new Car({ color, accent: 0x14141a, isBot: true });
   scene.add(bot.group);
   return bot;
+}
+
+function getDifficultyProfile() {
+  return {
+    casual: {
+      botSkill: 0.72,
+      leadFactor: 0.38,
+      reaction: 1.9,
+      burstChance: 0.06,
+      speedMultiplier: 0.92,
+      heatRamp: 0.75
+    },
+    classic: {
+      botSkill: 0.92,
+      leadFactor: 0.62,
+      reaction: 2.4,
+      burstChance: 0.11,
+      speedMultiplier: 1,
+      heatRamp: 1
+    },
+    brutal: {
+      botSkill: 1.12,
+      leadFactor: 0.84,
+      reaction: 3.1,
+      burstChance: 0.18,
+      speedMultiplier: 1.12,
+      heatRamp: 1.4
+    }
+  }[settings.difficulty];
+}
+
+function createFxPool() {
+  for (let i = 0; i < FX_POOL_SIZE; i += 1) {
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.15, 6, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 })
+    );
+    mesh.visible = false;
+    scene.add(mesh);
+    fxPool.push({
+      mesh,
+      velocity: new THREE.Vector3(),
+      life: 0,
+      maxLife: 0.45
+    });
+  }
+}
+
+function spawnFx(position, velocity, color, scale = 1, life = 0.45) {
+  const particle = fxPool.find((item) => item.life <= 0);
+  if (!particle) return;
+  particle.mesh.visible = true;
+  particle.mesh.position.copy(position);
+  particle.mesh.scale.setScalar(scale);
+  particle.mesh.material.color.setHex(color);
+  particle.mesh.material.opacity = 1;
+  particle.velocity.copy(velocity);
+  particle.life = life;
+  particle.maxLife = life;
+}
+
+function updateFx(dt) {
+  for (const particle of fxPool) {
+    if (particle.life <= 0) continue;
+    particle.life -= dt;
+    if (particle.life <= 0) {
+      particle.mesh.visible = false;
+      particle.mesh.material.opacity = 0;
+      continue;
+    }
+    particle.velocity.multiplyScalar(0.96);
+    particle.velocity.y += 0.5 * dt;
+    particle.mesh.position.addScaledVector(particle.velocity, dt);
+    const alpha = particle.life / particle.maxLife;
+    particle.mesh.material.opacity = alpha;
+    particle.mesh.scale.setScalar(0.18 + alpha * 0.55);
+  }
 }
 
 function makePowerup(type) {
@@ -421,6 +504,8 @@ function resetLevel() {
   player.heading = 0;
   player.moveHeading = 0;
   player.verticalVel = 0;
+  player.lastRampTime = 0;
+  state.steerSmoothed = 0;
 
   buildWorld();
   spawnBots();
@@ -437,12 +522,16 @@ function spawnBots() {
     classic: 1,
     brutal: 1.25
   }[settings.difficulty];
+  const profile = getDifficultyProfile();
   const botCount = Math.max(2, Math.round(level.bots * difficultyScale));
   for (let i = 0; i < botCount; i += 1) {
     const bot = makeBot(palette[i % palette.length]);
     bot.setPosition(THREE.MathUtils.randFloatSpread(140), 0, THREE.MathUtils.randFloatSpread(140));
-    bot.maxSpeed = level.botSpeed * difficultyScale;
-    bot.accel = 18 + level.bots * difficultyScale;
+    bot.maxSpeed = level.botSpeed * difficultyScale * profile.speedMultiplier;
+    bot.accel = (18 + level.bots * difficultyScale) * profile.botSkill;
+    bot.turnRate = 2.1 * profile.botSkill;
+    bot.aiBurstCooldown = Math.random() * 1.2;
+    bot.lastRampTime = 0;
     bots.push(bot);
   }
 }
@@ -501,29 +590,74 @@ function consumePowerup(powerup) {
   powerup.material.emissive.setHex(powerup.material.color.getHex());
 }
 
+function emitDrivingFx(dt, steer, driftActive, boostActive) {
+  const speedAbs = Math.abs(player.speed);
+  if (player.position.y > 0.25 || speedAbs < 6) return;
+
+  const heading = player.moveHeading;
+  const forward = tempVector.set(Math.sin(heading), 0, Math.cos(heading));
+  const right = tempVectorB.set(Math.cos(heading), 0, -Math.sin(heading));
+  const rearCenter = tempVectorC.copy(player.position).addScaledVector(forward, -1.35);
+
+  if (driftActive && speedAbs > 10 && Math.abs(steer) > 0.18) {
+    const intensity = THREE.MathUtils.clamp(speedAbs / 50, 0.25, 1);
+    const jitter = (Math.random() - 0.5) * 0.35;
+    const sideForce = Math.sign(steer || 1) * 2.5;
+    const leftSpawn = rearCenter.clone().addScaledVector(right, -0.8 + jitter);
+    const rightSpawn = rearCenter.clone().addScaledVector(right, 0.8 + jitter);
+    const baseVel = forward.clone().multiplyScalar(-5 - speedAbs * 0.08);
+    spawnFx(leftSpawn, baseVel.clone().addScaledVector(right, -sideForce), 0x9de8ff, 0.45 * intensity, 0.34);
+    spawnFx(rightSpawn, baseVel.addScaledVector(right, sideForce), 0x9de8ff, 0.45 * intensity, 0.34);
+  }
+
+  if (boostActive && speedAbs > 8) {
+    const flameSpawn = rearCenter.clone().addScaledVector(forward, -0.45);
+    const boostVel = forward.clone().multiplyScalar(-14 - speedAbs * 0.2);
+    boostVel.x += (Math.random() - 0.5) * 1.2;
+    boostVel.z += (Math.random() - 0.5) * 1.2;
+    boostVel.y += (Math.random() - 0.5) * 0.6;
+    spawnFx(flameSpawn, boostVel, 0xff9f45, 0.62, 0.28);
+    if (Math.random() < 0.45) {
+      spawnFx(flameSpawn, boostVel.clone().multiplyScalar(0.75), 0xffe09b, 0.38, 0.22);
+    }
+  }
+}
+
 function updatePlayer(dt) {
-  const steer = getSteer() * (settings.invertSteer ? -1 : 1);
+  const inputSteer = getSteer() * (settings.invertSteer ? -1 : 1);
+  const steerFilter = input.drift ? 5.2 : 8.2;
+  state.steerSmoothed += (inputSteer - state.steerSmoothed) * dt * steerFilter;
+  const steer = state.steerSmoothed;
   const throttle = input.throttle ? 1 : 0;
   const brake = input.brake ? 1 : 0;
   const drift = input.drift;
   const boostActive = input.boost && state.boost > 0.05;
 
-  const accel = player.accel * (boostActive ? 1.4 : 1);
+  const speedAbs = Math.abs(player.speed);
+  const speedRatio = THREE.MathUtils.clamp(speedAbs / player.maxSpeed, 0, 1);
+  const accel = player.accel * (boostActive ? 1.35 : 1);
   if (throttle) player.speed += accel * dt;
-  if (brake) player.speed -= accel * dt * 0.8;
+  if (brake) player.speed -= accel * dt * (0.9 + speedRatio * 0.25);
 
   if (!throttle && !brake) {
-    player.speed -= Math.sign(player.speed) * 12 * dt;
+    player.speed -= Math.sign(player.speed) * (8.5 + speedRatio * 5.5) * dt;
   }
 
   player.speed = THREE.MathUtils.clamp(player.speed, -12, player.maxSpeed * (boostActive ? 1.25 : 1));
 
-  const grip = drift ? player.driftGrip : player.normalGrip;
-  player.heading += steer * player.turnRate * dt * (0.4 + Math.abs(player.speed) / player.maxSpeed);
+  const turnAssist = 0.78 + (1 - speedRatio) * 0.42;
+  const turnPower = player.turnRate * turnAssist * (drift ? 1.18 : 1);
+  const direction = player.speed >= 0 ? 1 : -1;
+  player.heading += steer * turnPower * dt * direction;
+
+  const grip = drift ? 1.25 : 3.9;
+  const slipAmount = drift ? 0.58 : 0.18;
   player.moveHeading = THREE.MathUtils.lerp(player.moveHeading, player.heading, grip * dt);
 
   const forward = new THREE.Vector3(Math.sin(player.moveHeading), 0, Math.cos(player.moveHeading));
   player.velocity.copy(forward).multiplyScalar(player.speed);
+  const lateral = new THREE.Vector3(Math.cos(player.moveHeading), 0, -Math.sin(player.moveHeading));
+  player.velocity.addScaledVector(lateral, steer * speedAbs * slipAmount * 0.08);
 
   if (boostActive) {
     state.boost = Math.max(0, state.boost - dt * 0.18);
@@ -540,6 +674,7 @@ function updatePlayer(dt) {
   updateVerticalPhysics(player, dt);
   player.update(dt);
   updateCombo(dt, steer);
+  emitDrivingFx(dt, steer, drift, boostActive);
 
   if (boostActive) {
     state.score += dt * 6 * state.combo;
@@ -572,13 +707,13 @@ function updateVerticalPhysics(car, dt) {
     const dx = car.position.x - ramp.position.x;
     const dz = car.position.z - ramp.position.z;
     const distance = Math.hypot(dx, dz);
-    const ready = performance.now() - state.lastRampTime > 600;
-    if (distance < radius && car.position.y <= 0.16 && ready && Math.abs(car.speed) > 4) {
+    const ready = performance.now() - car.lastRampTime > 340;
+    if (distance < radius && car.position.y <= 0.2 && ready && Math.abs(car.speed) > 2.5) {
       const centerBoost = 1 - distance / radius;
-      car.verticalVel = 11 + Math.abs(car.speed) * 0.1 + centerBoost * 3;
+      car.verticalVel = 10 + Math.abs(car.speed) * 0.095 + centerBoost * 4;
       const currentSign = Math.sign(car.speed || 1);
       car.speed = Math.min(car.maxSpeed * 1.2, Math.abs(car.speed) + 11) * currentSign;
-      state.lastRampTime = performance.now();
+      car.lastRampTime = performance.now();
       if (!car.isBot) state.score += Math.round(70 + centerBoost * 70);
     }
   });
@@ -586,26 +721,53 @@ function updateVerticalPhysics(car, dt) {
 
 function updateBots(dt) {
   const level = getLevel();
-  const targetSpeed = level.botSpeed + state.heat * 8;
+  const profile = getDifficultyProfile();
+  const targetSpeed = (level.botSpeed + state.heat * 8 * profile.heatRamp) * profile.speedMultiplier;
 
   bots.forEach((bot, index) => {
-    const toPlayer = player.position.clone().sub(bot.position);
+    bot.aiBurstCooldown = Math.max(0, bot.aiBurstCooldown - dt);
+    const predictionTime = THREE.MathUtils.clamp((bot.position.distanceTo(player.position) / 60) * profile.leadFactor, 0.05, 0.85);
+    const predicted = tempVector
+      .copy(player.position)
+      .addScaledVector(player.velocity, predictionTime)
+      .addScaledVector(new THREE.Vector3(Math.sin(player.heading), 0, Math.cos(player.heading)), 2.8);
+
+    const toPlayer = tempVectorB.copy(predicted).sub(bot.position);
     const distance = toPlayer.length();
     const desiredHeading = Math.atan2(toPlayer.x, toPlayer.z);
-    const steer = THREE.MathUtils.clamp(angleDifference(bot.heading, desiredHeading), -1, 1);
+    let steer = THREE.MathUtils.clamp(angleDifference(bot.heading, desiredHeading), -1, 1);
+    steer *= profile.botSkill;
 
-    bot.heading += steer * bot.turnRate * dt * 0.8;
-    bot.moveHeading = THREE.MathUtils.lerp(bot.moveHeading, bot.heading, 2.2 * dt);
+    // Simple local separation prevents all bots stacking on one vector.
+    for (let j = 0; j < bots.length; j += 1) {
+      if (j === index) continue;
+      const other = bots[j];
+      const dx = bot.position.x - other.position.x;
+      const dz = bot.position.z - other.position.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 > 0.01 && d2 < 36) {
+        steer += (dx - dz) * 0.003;
+      }
+    }
+    steer = THREE.MathUtils.clamp(steer, -1, 1);
 
-    const speedBoost = distance > 40 ? 1.2 : 1;
-    bot.speed += bot.accel * dt * 0.5;
-    bot.speed = Math.min(targetSpeed * speedBoost, bot.maxSpeed + state.heat * 5);
+    bot.heading += steer * bot.turnRate * dt * profile.reaction;
+    bot.moveHeading = THREE.MathUtils.lerp(bot.moveHeading, bot.heading, (1.9 + profile.botSkill) * dt);
 
-    const forward = new THREE.Vector3(Math.sin(bot.moveHeading), 0, Math.cos(bot.moveHeading));
+    const closePressure = THREE.MathUtils.clamp((55 - distance) / 55, 0, 1);
+    let speedBoost = distance > 50 ? 1.28 : 1;
+    if (bot.aiBurstCooldown <= 0 && Math.random() < profile.burstChance * dt * 12) {
+      bot.aiBurstCooldown = THREE.MathUtils.randFloat(1.1, 2.1);
+      speedBoost += 0.28;
+    }
+    bot.speed += bot.accel * dt * (0.5 + closePressure * 0.55);
+    bot.speed = Math.min(targetSpeed * speedBoost, bot.maxSpeed + state.heat * 6.5 * profile.heatRamp);
+
+    const forward = tempVectorC.set(Math.sin(bot.moveHeading), 0, Math.cos(bot.moveHeading));
     bot.velocity.copy(forward).multiplyScalar(bot.speed);
 
-    if (index % 2 === 0 && distance < 14) {
-      bot.velocity.add(new THREE.Vector3(Math.cos(bot.heading), 0, -Math.sin(bot.heading)).multiplyScalar(6));
+    if (index % 2 === 0 && distance < 16) {
+      bot.velocity.add(new THREE.Vector3(Math.cos(bot.heading), 0, -Math.sin(bot.heading)).multiplyScalar(5.5 * profile.botSkill));
     }
 
     updateVerticalPhysics(bot, dt);
@@ -686,9 +848,10 @@ function updateCombo(dt, steer) {
 }
 
 function updateDifficulty(dt) {
+  const profile = getDifficultyProfile();
   state.elapsed += dt;
   if (state.elapsed > 10) {
-    state.heat = Math.min(1.2, state.heat + dt * 0.015);
+    state.heat = Math.min(1.35, state.heat + dt * 0.015 * profile.heatRamp);
   }
 }
 
@@ -826,10 +989,13 @@ function animate(now) {
     updatePowerups(dt);
     updatePowerupCollisions();
     updateBoostPads();
+    updateFx(dt);
 
     if (state.timeLeft <= 0) {
       completeLevel();
     }
+  } else {
+    updateFx(dt);
   }
 
   updateCamera(dt);
@@ -954,6 +1120,7 @@ cameraToggle.addEventListener("change", (event) => {
   settings.cameraFocus = event.target.checked;
 });
 
+createFxPool();
 resetLevel();
 updateHud();
 requestAnimationFrame(animate);
