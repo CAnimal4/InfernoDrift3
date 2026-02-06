@@ -378,6 +378,37 @@ button:hover {
   box-shadow: 0 10px 30px rgba(32, 212, 255, 0.4);
 }
 
+.minimap-wrap {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  z-index: 8;
+  border: 1px solid var(--stroke);
+  border-radius: 16px;
+  background: var(--panel);
+  backdrop-filter: blur(10px);
+  padding: 10px;
+  box-shadow: var(--glow);
+  display: grid;
+  gap: 8px;
+}
+
+.minimap-title {
+  font-size: 0.75rem;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+#minimap {
+  width: 180px;
+  height: 180px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(10, 18, 30, 0.95);
+}
+
 .status {
   position: absolute;
   left: 24px;
@@ -430,5 +461,16 @@ button:hover {
     inset: auto 14px 14px 14px;
     flex-wrap: wrap;
     justify-content: center;
+  }
+
+  .minimap-wrap {
+    left: 14px;
+    bottom: 14px;
+    padding: 8px;
+  }
+
+  #minimap {
+    width: 140px;
+    height: 140px;
   }
 }

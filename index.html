@@ -35,6 +35,10 @@
           <span class="label">Score</span>
           <strong id="hud-score">0</strong>
         </div>
+        <div class="pill">
+          <span class="label">Speed</span>
+          <strong id="hud-speed">0 KPH</strong>
+        </div>
         <div class="pill lives-pill">
           <span class="label">Lives</span>
           <div id="hud-hearts" class="hearts" aria-label="Lives"></div>
@@ -61,6 +65,11 @@
       <div class="touch-controls">
         <button id="touch-drift">Drift</button>
         <button id="touch-boost" class="primary">Boost</button>
+      </div>
+
+      <div class="minimap-wrap">
+        <div class="minimap-title">Radar</div>
+        <canvas id="minimap" width="180" height="180" aria-label="Minimap"></canvas>
       </div>
 
       <div class="overlay show" id="overlay">

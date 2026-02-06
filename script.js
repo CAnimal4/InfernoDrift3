@@ -17,11 +17,14 @@ const hudWorld = document.getElementById("hud-world");
 const hudLevel = document.getElementById("hud-level");
 const hudTime = document.getElementById("hud-time");
 const hudScore = document.getElementById("hud-score");
+const hudSpeed = document.getElementById("hud-speed");
 const hudLives = document.getElementById("hud-lives");
 const hudHearts = document.getElementById("hud-hearts");
 const hudCombo = document.getElementById("hud-combo");
 const touchDrift = document.getElementById("touch-drift");
 const touchBoost = document.getElementById("touch-boost");
+const minimapCanvas = document.getElementById("minimap");
+const minimapCtx = minimapCanvas ? minimapCanvas.getContext("2d") : null;
 const menu = document.getElementById("menu");
 const menuBtn = document.getElementById("menu-btn");
 const menuClose = document.getElementById("menu-close");
@@ -190,6 +193,32 @@ const tempVectorC = new THREE.Vector3();
 let lastLivesRendered = -1;
 const FX_POOL_SIZE = 160;
 const fxPool = [];
+
+const groundGrid = new THREE.GridHelper(WORLD_SIZE, 52, 0x4f6d88, 0x2f4357);
+groundGrid.position.y = 0.01;
+if (Array.isArray(groundGrid.material)) {
+  groundGrid.material.forEach((material) => {
+    material.transparent = true;
+    material.opacity = 0.42;
+  });
+} else {
+  groundGrid.material.transparent = true;
+  groundGrid.material.opacity = 0.42;
+}
+scene.add(groundGrid);
+
+function pointSegmentDistance2D(px, pz, ax, az, bx, bz) {
+  const abx = bx - ax;
+  const abz = bz - az;
+  const apx = px - ax;
+  const apz = pz - az;
+  const abLenSq = abx * abx + abz * abz;
+  if (abLenSq === 0) return Math.hypot(px - ax, pz - az);
+  const t = THREE.MathUtils.clamp((apx * abx + apz * abz) / abLenSq, 0, 1);
+  const cx = ax + abx * t;
+  const cz = az + abz * t;
+  return Math.hypot(px - cx, pz - cz);
+}
 
 class Car {
   constructor({ color = 0xff4d2d, accent = 0x10131a, isBot = false } = {}) {
@@ -762,12 +791,25 @@ function updateVerticalPhysics(car, dt) {
     const radius = ramp.userData.radius;
     const jumpLift = ramp.userData.jumpLift ?? 4;
     const speedKick = ramp.userData.speedKick ?? 11;
-    const dx = car.position.x - ramp.position.x;
-    const dz = car.position.z - ramp.position.z;
-    const distance = Math.hypot(dx, dz);
-    const ready = performance.now() - car.lastRampTime > 340;
-    if (distance < radius && car.position.y <= 0.2 && ready && Math.abs(car.speed) > 2.5) {
-      const centerBoost = 1 - distance / radius;
+    const currentDistance = Math.hypot(car.position.x - ramp.position.x, car.position.z - ramp.position.z);
+    const nextX = car.position.x + car.velocity.x * dt;
+    const nextZ = car.position.z + car.velocity.z * dt;
+    const nextDistance = Math.hypot(nextX - ramp.position.x, nextZ - ramp.position.z);
+    const sweptDistance = pointSegmentDistance2D(
+      ramp.position.x,
+      ramp.position.z,
+      car.position.x,
+      car.position.z,
+      nextX,
+      nextZ
+    );
+    const speedAbs = Math.abs(car.speed);
+    const speedMargin = Math.min(5.2, speedAbs * 0.07);
+    const triggerRadius = radius + speedMargin;
+    const closestDistance = Math.min(currentDistance, nextDistance, sweptDistance);
+    const ready = performance.now() - car.lastRampTime > 220;
+    if (closestDistance < triggerRadius && car.position.y <= 0.32 && ready && speedAbs > 1.8) {
+      const centerBoost = 1 - THREE.MathUtils.clamp(closestDistance / triggerRadius, 0, 1);
       car.verticalVel = 9.2 + Math.abs(car.speed) * 0.085 + centerBoost * jumpLift;
       const currentSign = Math.sign(car.speed || 1);
       car.speed = Math.min(car.maxSpeed * 1.35, Math.abs(car.speed) + speedKick) * currentSign;
@@ -913,11 +955,79 @@ function updateDifficulty(dt) {
   }
 }
 
+function worldToMinimap(x, z, size, padding) {
+  const usable = size - padding * 2;
+  const nx = (x + HALF_WORLD) / WORLD_SIZE;
+  const nz = (z + HALF_WORLD) / WORLD_SIZE;
+  return {
+    x: padding + THREE.MathUtils.clamp(nx, 0, 1) * usable,
+    y: padding + THREE.MathUtils.clamp(nz, 0, 1) * usable
+  };
+}
+
+function drawMinimap() {
+  if (!minimapCtx || !minimapCanvas) return;
+  const size = minimapCanvas.width;
+  const pad = 10;
+
+  minimapCtx.clearRect(0, 0, size, size);
+  minimapCtx.fillStyle = "rgba(6, 12, 20, 0.96)";
+  minimapCtx.fillRect(0, 0, size, size);
+
+  minimapCtx.strokeStyle = "rgba(123, 161, 199, 0.75)";
+  minimapCtx.lineWidth = 1;
+  minimapCtx.strokeRect(pad, pad, size - pad * 2, size - pad * 2);
+
+  minimapCtx.strokeStyle = "rgba(123, 161, 199, 0.28)";
+  const step = (size - pad * 2) / 4;
+  for (let i = 1; i < 4; i += 1) {
+    const p = pad + step * i;
+    minimapCtx.beginPath();
+    minimapCtx.moveTo(p, pad);
+    minimapCtx.lineTo(p, size - pad);
+    minimapCtx.stroke();
+    minimapCtx.beginPath();
+    minimapCtx.moveTo(pad, p);
+    minimapCtx.lineTo(size - pad, p);
+    minimapCtx.stroke();
+  }
+
+  minimapCtx.fillStyle = "rgba(255, 171, 92, 0.92)";
+  ramps.forEach((ramp) => {
+    const p = worldToMinimap(ramp.position.x, ramp.position.z, size, pad);
+    const r = ramp.userData.kind === "mega" ? 2.9 : 2;
+    minimapCtx.beginPath();
+    minimapCtx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    minimapCtx.fill();
+  });
+
+  minimapCtx.fillStyle = "rgba(255, 93, 93, 0.95)";
+  bots.forEach((bot) => {
+    const p = worldToMinimap(bot.position.x, bot.position.z, size, pad);
+    minimapCtx.beginPath();
+    minimapCtx.arc(p.x, p.y, 2.2, 0, Math.PI * 2);
+    minimapCtx.fill();
+  });
+
+  const playerPoint = worldToMinimap(player.position.x, player.position.z, size, pad);
+  const heading = player.heading;
+  const dirX = Math.sin(heading);
+  const dirY = Math.cos(heading);
+  minimapCtx.fillStyle = "#7effff";
+  minimapCtx.beginPath();
+  minimapCtx.moveTo(playerPoint.x + dirX * 6, playerPoint.y + dirY * 6);
+  minimapCtx.lineTo(playerPoint.x - dirY * 3.8, playerPoint.y + dirX * 3.8);
+  minimapCtx.lineTo(playerPoint.x + dirY * 3.8, playerPoint.y - dirX * 3.8);
+  minimapCtx.closePath();
+  minimapCtx.fill();
+}
+
 function updateHud() {
   const level = getLevel();
   hudWorld.textContent = getWorld().name;
   hudLevel.textContent = level.name;
   hudScore.textContent = Math.floor(state.score).toString();
+  hudSpeed.textContent = `${Math.round(Math.abs(player.speed) * 8.2)} KPH`;
   renderLivesHud();
   hudCombo.textContent = `x${state.combo.toFixed(1)}`;
   const minutes = Math.floor(state.timeLeft / 60);
@@ -926,6 +1036,7 @@ function updateHud() {
   boostBar.style.width = `${Math.round(state.boost * 100)}%`;
   shieldBar.style.width = `${Math.round(state.shield * 100)}%`;
   progressBar.style.width = `${Math.min(100, (1 - state.timeLeft / level.time) * 100)}%`;
+  drawMinimap();
 }
 
 function renderLivesHud() {
