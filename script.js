@@ -36,7 +36,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = false;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x0b0f14, 30, 240);
+scene.fog = new THREE.Fog(0x0b0f14, 40, 420);
 
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 600);
 camera.position.set(0, 7.5, 14);
@@ -49,7 +49,7 @@ sun.position.set(18, 28, 14);
 scene.add(sun);
 
 const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x0c1016, roughness: 0.9 });
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), groundMaterial);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), groundMaterial);
 ground.rotation.x = -Math.PI / 2;
 ground.position.y = -0.02;
 scene.add(ground);
@@ -58,7 +58,7 @@ const arena = new THREE.Group();
 const props = new THREE.Group();
 scene.add(arena, props);
 
-const WORLD_SIZE = 200;
+const WORLD_SIZE = 360;
 const HALF_WORLD = WORLD_SIZE / 2;
 const CAR_RADIUS = 1.4;
 const BOT_RADIUS = 1.4;
@@ -273,24 +273,25 @@ function makePowerup(type) {
 
 function makeRamp() {
   const rampGroup = new THREE.Group();
-  const rampGeo = new THREE.BoxGeometry(7.5, 0.7, 10);
-  const rampMat = new THREE.MeshStandardMaterial({ color: 0x1a2028, roughness: 0.55 });
-  const ramp = new THREE.Mesh(rampGeo, rampMat);
-  ramp.rotation.x = -Math.PI / 6.5;
-  ramp.position.y = 0.35;
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(6.2, 6.2, 0.45, 28),
+    new THREE.MeshStandardMaterial({ color: 0x1a2028, roughness: 0.5 })
+  );
+  base.position.y = 0.22;
+  const dome = new THREE.Mesh(
+    new THREE.ConeGeometry(4.8, 1.8, 28),
+    new THREE.MeshStandardMaterial({ color: 0xff7a45, emissive: 0x5a1e10, roughness: 0.35 })
+  );
+  dome.position.y = 1.1;
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(6.5, 0.25, 10, 40),
+    new THREE.MeshStandardMaterial({ color: 0xffa24c, emissive: 0xff6b2e, emissiveIntensity: 0.9, roughness: 0.2 })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.38;
 
-  const stripGeo = new THREE.BoxGeometry(1.2, 0.08, 8);
-  const stripMat = new THREE.MeshStandardMaterial({
-    color: 0xff7a45,
-    emissive: 0xff5a2a,
-    emissiveIntensity: 0.9,
-    roughness: 0.2
-  });
-  const strip = new THREE.Mesh(stripGeo, stripMat);
-  strip.position.set(0, 0.3, -0.2);
-
-  rampGroup.add(ramp, strip);
-  rampGroup.userData.size = new THREE.Vector3(7.5, 0.7, 10);
+  rampGroup.add(base, dome, ring);
+  rampGroup.userData.radius = 6.4;
   scene.add(rampGroup);
   return rampGroup;
 }
@@ -317,28 +318,22 @@ function makeBarrier(x, z, width, depth) {
 }
 
 function makeBoostPad() {
-  const padGeo = new THREE.BoxGeometry(6, 0.25, 6);
-  const padMat = new THREE.MeshStandardMaterial({
-    color: 0x1ad7ff,
-    emissive: 0x0b8fb8,
-    emissiveIntensity: 0.8,
-    roughness: 0.4
-  });
-  const pad = new THREE.Mesh(padGeo, padMat);
-  pad.position.y = 0.08;
-  pad.userData.size = new THREE.Vector3(6, 0.25, 6);
-  const beaconGeo = new THREE.CylinderGeometry(0.25, 0.35, 4, 8);
-  const beaconMat = new THREE.MeshStandardMaterial({
-    color: 0x27f2ff,
-    emissive: 0x27f2ff,
-    emissiveIntensity: 1,
-    roughness: 0.2
-  });
-  const beacon = new THREE.Mesh(beaconGeo, beaconMat);
-  beacon.position.y = 2.2;
-  pad.add(beacon);
-  scene.add(pad);
-  return pad;
+  const padGroup = new THREE.Group();
+  const disc = new THREE.Mesh(
+    new THREE.CylinderGeometry(3.2, 3.2, 0.18, 24),
+    new THREE.MeshStandardMaterial({ color: 0x0d3c4d, emissive: 0x0b8fb8, emissiveIntensity: 0.45, roughness: 0.35 })
+  );
+  disc.position.y = 0.09;
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(2.8, 0.24, 12, 40),
+    new THREE.MeshStandardMaterial({ color: 0x27f2ff, emissive: 0x27f2ff, emissiveIntensity: 0.9, roughness: 0.2 })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.24;
+  padGroup.add(disc, ring);
+  padGroup.userData.radius = 3.3;
+  scene.add(padGroup);
+  return padGroup;
 }
 
 function clearWorld() {
@@ -360,10 +355,10 @@ function buildWorld() {
   groundMaterial.color.setHex(world.ground);
 
   ramps.length = 0;
-  for (let i = 0; i < 12; i += 1) {
+  for (let i = 0; i < 18; i += 1) {
     const ramp = makeRamp();
     const angle = Math.random() * Math.PI * 2;
-    const radius = 30 + Math.random() * 70;
+    const radius = 45 + Math.random() * 120;
     ramp.position.x = Math.cos(angle) * radius;
     ramp.position.z = Math.sin(angle) * radius;
     ramps.push(ramp);
@@ -378,10 +373,10 @@ function buildWorld() {
   });
 
   boostPads.length = 0;
-  for (let i = 0; i < 8; i += 1) {
+  for (let i = 0; i < 12; i += 1) {
     const pad = makeBoostPad();
     const angle = Math.random() * Math.PI * 2;
-    const radius = 20 + Math.random() * 80;
+    const radius = 35 + Math.random() * 130;
     pad.position.x = Math.cos(angle) * radius;
     pad.position.z = Math.sin(angle) * radius;
     boostPads.push(pad);
@@ -442,7 +437,7 @@ function spawnBots() {
   const botCount = Math.max(2, Math.round(level.bots * difficultyScale));
   for (let i = 0; i < botCount; i += 1) {
     const bot = makeBot(palette[i % palette.length]);
-    bot.setPosition(THREE.MathUtils.randFloatSpread(60), 0, THREE.MathUtils.randFloatSpread(60));
+    bot.setPosition(THREE.MathUtils.randFloatSpread(140), 0, THREE.MathUtils.randFloatSpread(140));
     bot.maxSpeed = level.botSpeed * difficultyScale;
     bot.accel = 18 + level.bots * difficultyScale;
     bots.push(bot);
@@ -456,7 +451,7 @@ function spawnPowerups() {
   for (let i = 0; i < 6; i += 1) {
     const type = types[Math.floor(Math.random() * types.length)];
     const powerup = makePowerup(type);
-    powerup.position.set(THREE.MathUtils.randFloatSpread(130), 1.4, THREE.MathUtils.randFloatSpread(130));
+    powerup.position.set(THREE.MathUtils.randFloatSpread(280), 1.4, THREE.MathUtils.randFloatSpread(280));
     powerups.push(powerup);
   }
 }
@@ -490,7 +485,7 @@ function consumePowerup(powerup) {
     state.score += 120;
   }
 
-  powerup.position.set(THREE.MathUtils.randFloatSpread(130), 1.4, THREE.MathUtils.randFloatSpread(130));
+  powerup.position.set(THREE.MathUtils.randFloatSpread(280), 1.4, THREE.MathUtils.randFloatSpread(280));
   powerup.userData.type = ["boost", "shield", "life", "slow"][Math.floor(Math.random() * 4)];
   powerup.material.color.setHex({
     boost: 0x28d7ff,
@@ -568,15 +563,18 @@ function updateVerticalPhysics(car, dt) {
   }
 
   ramps.forEach((ramp) => {
-    const size = ramp.userData.size;
-    const withinX = Math.abs(car.position.x - ramp.position.x) < size.x * 0.5;
-    const withinZ = Math.abs(car.position.z - ramp.position.z) < size.z * 0.5;
+    const radius = ramp.userData.radius;
+    const dx = car.position.x - ramp.position.x;
+    const dz = car.position.z - ramp.position.z;
+    const distance = Math.hypot(dx, dz);
     const ready = performance.now() - state.lastRampTime > 600;
-    if (withinX && withinZ && car.position.y <= 0.15 && ready && Math.abs(car.speed) > 4) {
-      car.verticalVel = 12 + Math.abs(car.speed) * 0.12;
-      car.speed = Math.min(car.maxSpeed, car.speed + 12);
+    if (distance < radius && car.position.y <= 0.16 && ready && Math.abs(car.speed) > 4) {
+      const centerBoost = 1 - distance / radius;
+      car.verticalVel = 11 + Math.abs(car.speed) * 0.1 + centerBoost * 3;
+      const currentSign = Math.sign(car.speed || 1);
+      car.speed = Math.min(car.maxSpeed * 1.2, Math.abs(car.speed) + 11) * currentSign;
       state.lastRampTime = performance.now();
-      if (!car.isBot) state.score += 80;
+      if (!car.isBot) state.score += Math.round(70 + centerBoost * 70);
     }
   });
 }
@@ -651,10 +649,8 @@ function updatePowerupCollisions() {
 
 function updateBoostPads() {
   boostPads.forEach((pad) => {
-    const size = pad.userData.size;
-    const withinX = Math.abs(player.position.x - pad.position.x) < size.x * 0.5 + 0.8;
-    const withinZ = Math.abs(player.position.z - pad.position.z) < size.z * 0.5 + 0.8;
-    if (withinX && withinZ && player.position.y <= 0.2) {
+    const distance = Math.hypot(player.position.x - pad.position.x, player.position.z - pad.position.z);
+    if (distance < pad.userData.radius && player.position.y <= 0.2) {
       player.speed = Math.min(player.maxSpeed * 1.2, player.speed + 14);
       state.boost = Math.min(1, state.boost + 0.2);
       state.score += 40;
@@ -721,10 +717,10 @@ function loseLife() {
 
 function getSteer() {
   if (input.pointerActive) {
-    const delta = (input.pointerX - input.pointerStartX) / (window.innerWidth * 0.4);
+    const delta = (input.pointerStartX - input.pointerX) / (window.innerWidth * 0.4);
     return THREE.MathUtils.clamp(delta, -1, 1);
   }
-  return (input.left ? -1 : 0) + (input.right ? 1 : 0);
+  return (input.left ? 1 : 0) + (input.right ? -1 : 0);
 }
 
 function angleDifference(a, b) {
