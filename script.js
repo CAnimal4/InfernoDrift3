@@ -306,14 +306,14 @@ function buildWorld() {
   for (let x = -90; x <= 90; x += 20) {
     for (let z = -90; z <= 90; z += 20) {
       if (Math.abs(x) < 40 && Math.abs(z) < 40) continue;
-      if (Math.random() < 0.35) continue;
+      if (Math.random() < 0.6) continue;
       const height = 6 + Math.random() * 18;
       const color = accentColors[Math.floor(Math.random() * accentColors.length)];
       makeBuilding(x + Math.random() * 4, z + Math.random() * 4, height, color);
     }
   }
 
-  for (let i = 0; i < 10; i += 1) {
+  for (let i = 0; i < 6; i += 1) {
     makeBarrier(THREE.MathUtils.randFloatSpread(120), THREE.MathUtils.randFloatSpread(120), 8, 3);
   }
 
@@ -487,12 +487,15 @@ function updateVerticalPhysics(car, dt) {
   }
 
   ramps.forEach((ramp) => {
-    const dist = car.position.distanceTo(ramp.position);
-    if (dist < 6 && car.position.y <= 0.1 && performance.now() - state.lastRampTime > 800) {
-      car.verticalVel = 9 + Math.abs(car.speed) * 0.08;
-      car.speed = Math.min(car.maxSpeed, car.speed + 8);
+    const size = ramp.userData.size;
+    const withinX = Math.abs(car.position.x - ramp.position.x) < size.x * 0.5;
+    const withinZ = Math.abs(car.position.z - ramp.position.z) < size.z * 0.5;
+    const ready = performance.now() - state.lastRampTime > 600;
+    if (withinX && withinZ && car.position.y <= 0.15 && ready && Math.abs(car.speed) > 6) {
+      car.verticalVel = 10 + Math.abs(car.speed) * 0.1;
+      car.speed = Math.min(car.maxSpeed, car.speed + 10);
       state.lastRampTime = performance.now();
-      state.score += 80;
+      if (!car.isBot) state.score += 80;
     }
   });
 }
@@ -624,10 +627,10 @@ function loseLife() {
 
 function getSteer() {
   if (input.pointerActive) {
-    const delta = (input.pointerX - input.pointerStartX) / (window.innerWidth * 0.4);
+    const delta = (input.pointerStartX - input.pointerX) / (window.innerWidth * 0.4);
     return THREE.MathUtils.clamp(delta, -1, 1);
   }
-  return (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  return (input.left ? 1 : 0) - (input.right ? 1 : 0);
 }
 
 function angleDifference(a, b) {
