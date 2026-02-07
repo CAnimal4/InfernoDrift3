@@ -40,7 +40,7 @@ canvas {
   position: absolute;
   left: 24px;
   right: 24px;
-  top: 22px;
+  top: 42px;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -425,7 +425,7 @@ button:hover {
 .minimap-wrap {
   position: absolute;
   left: 24px;
-  top: 106px;
+  top: 128px;
   z-index: 8;
   border: 1px solid var(--stroke);
   border-radius: 16px;
@@ -456,7 +456,7 @@ button:hover {
 .status {
   position: absolute;
   right: 24px;
-  top: 70px;
+  top: 92px;
   display: flex;
   gap: 6px;
   z-index: 6;
@@ -491,13 +491,13 @@ button:hover {
   .hud {
     left: 12px;
     right: 12px;
-    top: 12px;
+    top: 34px;
     gap: 6px;
   }
 
   .status {
     right: 12px;
-    top: 66px;
+    top: 84px;
   }
 
   .progress {
@@ -512,7 +512,7 @@ button:hover {
 
   .minimap-wrap {
     left: 14px;
-    top: 102px;
+    top: 118px;
     padding: 8px;
   }
 
