@@ -62,9 +62,16 @@
         </div>
       </div>
 
-      <div class="touch-controls">
-        <button id="touch-drift">Drift</button>
-        <button id="touch-boost" class="primary">Boost</button>
+      <div class="touch-controls" id="touch-controls">
+        <div class="touch-stick-wrap">
+          <div id="touch-steer-pad" class="touch-steer-pad" aria-label="Touch Steering">
+            <div id="touch-steer-knob" class="touch-steer-knob"></div>
+          </div>
+        </div>
+        <div class="touch-buttons">
+          <button id="touch-drift">Drift</button>
+          <button id="touch-boost" class="primary">Boost</button>
+        </div>
       </div>
 
       <div class="minimap-wrap">
@@ -135,6 +142,10 @@
               <label class="field toggle">
                 <span>Camera Focus</span>
                 <input id="camera-toggle" type="checkbox" />
+              </label>
+              <label class="field toggle">
+                <span>iPad / Touch Controls</span>
+                <input id="touch-mode-toggle" type="checkbox" />
               </label>
               <p class="hint">Changes apply instantly. Press R to restart the current level.</p>
             </section>

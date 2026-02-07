@@ -33,6 +33,10 @@ const tabPanels = document.querySelectorAll(".tab-panel");
 const difficultySelect = document.getElementById("difficulty-select");
 const invertToggle = document.getElementById("invert-toggle");
 const cameraToggle = document.getElementById("camera-toggle");
+const touchModeToggle = document.getElementById("touch-mode-toggle");
+const touchControlsRoot = document.getElementById("touch-controls");
+const touchSteerPad = document.getElementById("touch-steer-pad");
+const touchSteerKnob = document.getElementById("touch-steer-knob");
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6));
@@ -68,6 +72,24 @@ const CAR_RADIUS = 1.4;
 const BOT_RADIUS = 1.4;
 const POWERUP_RADIUS = 1.6;
 const GRAVITY = -20;
+const PHYSICS_SUBSTEPS_BASE = 2;
+const PHYSICS_SUBSTEPS_MAX = 7;
+const RAMP_TRIGGER_THICKNESS = 1.4;
+const RAMP_SPEED_MARGIN_MULT = 0.145;
+const RAMP_LAUNCH_VERTICAL_MULT = 1.24;
+const BOT_HIT_RADIUS = BOT_RADIUS + CAR_RADIUS + 0.65;
+const BOT_HIT_COOLDOWN_MS = 420;
+const POST_HIT_SAFE_FRAMES = 8;
+const CAMERA_HEIGHT = 6.2;
+const CAMERA_BACK_DISTANCE = 11.4;
+const CAMERA_LOOK_HEIGHT = 1.05;
+const DEBUG_FLAGS = {
+  enabled: false,
+  input: false,
+  world: false,
+  ramps: false,
+  hits: false
+};
 const PLAYER_SPAWN_X = 0;
 const PLAYER_SPAWN_Z = -90;
 
@@ -153,7 +175,9 @@ const input = {
   pointerActive: false,
   pointerX: 0,
   pointerStartX: 0,
-  focusCamera: false
+  focusCamera: false,
+  touchEnabled: false,
+  touchSteer: 0
 };
 
 const settings = {
@@ -180,7 +204,14 @@ const state = {
   airTime: 0,
   wasAirborne: false,
   livesPulse: 0,
-  steerSmoothed: 0
+  steerSmoothed: 0,
+  isBuildingWorld: false,
+  buildCount: 0,
+  hitCount: 0,
+  missedHitSamples: 0,
+  lastHitAt: 0,
+  lastHitByBotId: -1,
+  postHitSafeFrames: 0
 };
 
 const obstacles = [];
@@ -195,6 +226,7 @@ const tempVectorC = new THREE.Vector3();
 let lastLivesRendered = -1;
 const FX_POOL_SIZE = 160;
 const fxPool = [];
+let botIdSeed = 1;
 
 const groundGrid = new THREE.GridHelper(WORLD_SIZE, 52, 0x4f6d88, 0x2f4357);
 groundGrid.position.y = 0.01;
@@ -220,6 +252,34 @@ function pointSegmentDistance2D(px, pz, ax, az, bx, bz) {
   const cx = ax + abx * t;
   const cz = az + abz * t;
   return Math.hypot(px - cx, pz - cz);
+}
+
+function segmentSegmentDistance2D(a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z) {
+  const distances = [
+    pointSegmentDistance2D(a0x, a0z, b0x, b0z, b1x, b1z),
+    pointSegmentDistance2D(a1x, a1z, b0x, b0z, b1x, b1z),
+    pointSegmentDistance2D(b0x, b0z, a0x, a0z, a1x, a1z),
+    pointSegmentDistance2D(b1x, b1z, a0x, a0z, a1x, a1z)
+  ];
+  return Math.min(...distances);
+}
+
+function debugLog(channel, ...args) {
+  if (!DEBUG_FLAGS.enabled) return;
+  if (!DEBUG_FLAGS[channel]) return;
+  console.log(`[debug:${channel}]`, ...args);
+}
+
+function disposeObject3D(root) {
+  if (!root) return;
+  root.traverse((child) => {
+    if (child.geometry) child.geometry.dispose();
+    if (Array.isArray(child.material)) {
+      child.material.forEach((mat) => mat && mat.dispose && mat.dispose());
+    } else if (child.material && child.material.dispose) {
+      child.material.dispose();
+    }
+  });
 }
 
 class Car {
@@ -322,6 +382,7 @@ scene.add(player.group);
 
 function makeBot(color) {
   const bot = new Car({ color, accent: 0x14141a, isBot: true });
+  bot.botId = botIdSeed++;
   scene.add(bot.group);
   return bot;
 }
@@ -531,58 +592,78 @@ function generateSpacedPolarPoints(count, minRadius, maxRadius, minSpacing, maxA
 
 function clearWorld() {
   obstacles.splice(0, obstacles.length);
+  ramps.forEach((ramp) => {
+    scene.remove(ramp);
+    disposeObject3D(ramp);
+  });
   ramps.splice(0, ramps.length);
-  powerups.forEach((powerup) => scene.remove(powerup));
+  powerups.forEach((powerup) => {
+    scene.remove(powerup);
+    disposeObject3D(powerup);
+  });
   powerups.splice(0, powerups.length);
-  boostPads.forEach((pad) => scene.remove(pad));
+  boostPads.forEach((pad) => {
+    scene.remove(pad);
+    disposeObject3D(pad);
+  });
   boostPads.splice(0, boostPads.length);
+  arena.children.forEach((child) => disposeObject3D(child));
+  props.children.forEach((child) => disposeObject3D(child));
   arena.clear();
   props.clear();
 }
 
 function buildWorld() {
-  clearWorld();
-  const world = getWorld();
-  scene.fog.color.setHex(world.fog);
-  scene.background = new THREE.Color(world.sky);
-  groundMaterial.color.setHex(world.ground);
+  if (state.isBuildingWorld) return;
+  state.isBuildingWorld = true;
+  try {
+    clearWorld();
+    const world = getWorld();
+    scene.fog.color.setHex(world.fog);
+    scene.background = new THREE.Color(world.sky);
+    groundMaterial.color.setHex(world.ground);
 
-  ramps.length = 0;
-  const titanRamp = makeRamp("titan");
-  titanRamp.position.set(0, 0, 0);
-  ramps.push(titanRamp);
+    ramps.length = 0;
+    const titanRamp = makeRamp("titan");
+    titanRamp.position.set(0, 0, 0);
+    ramps.push(titanRamp);
 
-  const rampPoints = generateSpacedPolarPoints(18, 80, HALF_WORLD - 38, 62);
-  rampPoints.forEach(({ x, z }, index) => {
-    const kind = index % 5 === 0 ? "mega" : "normal";
-    const ramp = makeRamp(kind);
-    ramp.position.set(x, 0, z);
-    ramps.push(ramp);
-  });
-  [
-    { x: 0, z: 92, kind: "normal" },
-    { x: -62, z: -44, kind: "mega" }
-  ].forEach(({ x, z, kind }) => {
-    const ramp = makeRamp(kind);
-    ramp.position.set(x, 0, z);
-    ramps.push(ramp);
-  });
+    const rampPoints = generateSpacedPolarPoints(18, 80, HALF_WORLD - 38, 62);
+    rampPoints.forEach(({ x, z }, index) => {
+      const kind = index % 5 === 0 ? "mega" : "normal";
+      const ramp = makeRamp(kind);
+      ramp.position.set(x, 0, z);
+      ramps.push(ramp);
+    });
+    [
+      { x: 0, z: 92, kind: "normal" },
+      { x: -62, z: -44, kind: "mega" }
+    ].forEach(({ x, z, kind }) => {
+      const ramp = makeRamp(kind);
+      ramp.position.set(x, 0, z);
+      ramps.push(ramp);
+    });
 
-  boostPads.length = 0;
-  const padPoints = generateSpacedPolarPoints(12, 70, HALF_WORLD - 40, 58);
-  padPoints.forEach(({ x, z }) => {
-    const pad = makeBoostPad();
-    pad.position.set(x, 0, z);
-    boostPads.push(pad);
-  });
-  [
-    { x: 20, z: 20 },
-    { x: -20, z: 35 }
-  ].forEach(({ x, z }) => {
-    const pad = makeBoostPad();
-    pad.position.set(x, 0, z);
-    boostPads.push(pad);
-  });
+    boostPads.length = 0;
+    const padPoints = generateSpacedPolarPoints(12, 70, HALF_WORLD - 40, 58);
+    padPoints.forEach(({ x, z }) => {
+      const pad = makeBoostPad();
+      pad.position.set(x, 0, z);
+      boostPads.push(pad);
+    });
+    [
+      { x: 20, z: 20 },
+      { x: -20, z: 35 }
+    ].forEach(({ x, z }) => {
+      const pad = makeBoostPad();
+      pad.position.set(x, 0, z);
+      boostPads.push(pad);
+    });
+    state.buildCount += 1;
+    debugLog("world", "buildWorld complete", { buildCount: state.buildCount, ramps: ramps.length, pads: boostPads.length });
+  } finally {
+    state.isBuildingWorld = false;
+  }
 }
 
 function getWorld() {
@@ -613,7 +694,11 @@ function resetLevel() {
   player.moveHeading = 0;
   player.verticalVel = 0;
   player.lastRampTime = 0;
+  player.prevPosition.copy(player.position);
   state.steerSmoothed = 0;
+  state.lastHitAt = 0;
+  state.lastHitByBotId = -1;
+  state.postHitSafeFrames = 0;
 
   buildWorld();
   spawnBots();
@@ -790,65 +875,71 @@ function updatePlayer(dt) {
 }
 
 function updateVerticalPhysics(car, dt) {
-  car.verticalVel += GRAVITY * dt;
-  car.position.y += car.verticalVel * dt;
+  const speedAbs = Math.abs(car.speed);
+  const substeps = THREE.MathUtils.clamp(Math.ceil(speedAbs / 17), PHYSICS_SUBSTEPS_BASE, PHYSICS_SUBSTEPS_MAX);
+  const stepDt = dt / substeps;
 
-  if (car.position.y <= 0) {
-    car.position.y = 0;
-    car.verticalVel = 0;
-    if (!car.isBot && state.wasAirborne) {
-      const bonus = Math.min(2.5, state.airTime);
-      if (bonus > 0.2) {
-        state.score += Math.round(120 * bonus);
-        state.boost = Math.min(1, state.boost + bonus * 0.15);
+  for (let step = 0; step < substeps; step += 1) {
+    car.verticalVel += GRAVITY * stepDt;
+    car.position.y += car.verticalVel * stepDt;
+
+    if (car.position.y <= 0) {
+      car.position.y = 0;
+      car.verticalVel = 0;
+      if (!car.isBot && state.wasAirborne) {
+        const bonus = Math.min(2.5, state.airTime);
+        if (bonus > 0.2) {
+          state.score += Math.round(120 * bonus);
+          state.boost = Math.min(1, state.boost + bonus * 0.15);
+        }
+        state.airTime = 0;
+        state.wasAirborne = false;
       }
-      state.airTime = 0;
-      state.wasAirborne = false;
+    } else if (!car.isBot) {
+      state.airTime += stepDt;
+      state.wasAirborne = true;
     }
-  } else if (!car.isBot) {
-    state.airTime += dt;
-    state.wasAirborne = true;
-  }
 
-  ramps.forEach((ramp) => {
-    const radius = ramp.userData.radius;
-    const jumpLift = ramp.userData.jumpLift ?? 4;
-    const speedKick = ramp.userData.speedKick ?? 11;
-    const prevDistance = Math.hypot(car.prevPosition.x - ramp.position.x, car.prevPosition.z - ramp.position.z);
-    const currentDistance = Math.hypot(car.position.x - ramp.position.x, car.position.z - ramp.position.z);
-    const nextX = car.position.x + car.velocity.x * dt;
-    const nextZ = car.position.z + car.velocity.z * dt;
-    const nextDistance = Math.hypot(nextX - ramp.position.x, nextZ - ramp.position.z);
-    const sweptFromPrev = pointSegmentDistance2D(
-      ramp.position.x,
-      ramp.position.z,
-      car.prevPosition.x,
-      car.prevPosition.z,
-      car.position.x,
-      car.position.z
-    );
-    const sweptDistance = pointSegmentDistance2D(
-      ramp.position.x,
-      ramp.position.z,
-      car.position.x,
-      car.position.z,
-      nextX,
-      nextZ
-    );
-    const speedAbs = Math.abs(car.speed);
-    const speedMargin = Math.min(9.5, speedAbs * 0.13);
-    const triggerRadius = radius + speedMargin;
-    const closestDistance = Math.min(prevDistance, currentDistance, nextDistance, sweptFromPrev, sweptDistance);
-    const ready = performance.now() - car.lastRampTime > 120;
-    if (closestDistance < triggerRadius && car.position.y <= 0.55 && ready && speedAbs > 1.5) {
-      const centerBoost = 1 - THREE.MathUtils.clamp(closestDistance / triggerRadius, 0, 1);
-      car.verticalVel = 9.2 + Math.abs(car.speed) * 0.085 + centerBoost * jumpLift;
-      const currentSign = Math.sign(car.speed || 1);
-      car.speed = Math.min(car.maxSpeed * 1.35, Math.abs(car.speed) + speedKick) * currentSign;
-      car.lastRampTime = performance.now();
-      if (!car.isBot) state.score += Math.round(70 + centerBoost * (70 + jumpLift * 8));
+    const phase = (step + 1) / substeps;
+    const nowX = THREE.MathUtils.lerp(car.prevPosition.x, car.position.x, phase);
+    const nowZ = THREE.MathUtils.lerp(car.prevPosition.z, car.position.z, phase);
+    const nextX = nowX + car.velocity.x * stepDt;
+    const nextZ = nowZ + car.velocity.z * stepDt;
+    const hitTimeReady = performance.now() - car.lastRampTime > 140;
+
+    for (let i = 0; i < ramps.length; i += 1) {
+      const ramp = ramps[i];
+      const radius = ramp.userData.radius;
+      const jumpLift = ramp.userData.jumpLift ?? 4;
+      const speedKick = ramp.userData.speedKick ?? 11;
+      const prevDistance = Math.hypot(car.prevPosition.x - ramp.position.x, car.prevPosition.z - ramp.position.z);
+      const currentDistance = Math.hypot(nowX - ramp.position.x, nowZ - ramp.position.z);
+      const nextDistance = Math.hypot(nextX - ramp.position.x, nextZ - ramp.position.z);
+      const sweptFromPrev = pointSegmentDistance2D(
+        ramp.position.x,
+        ramp.position.z,
+        car.prevPosition.x,
+        car.prevPosition.z,
+        nowX,
+        nowZ
+      );
+      const sweptDistance = pointSegmentDistance2D(ramp.position.x, ramp.position.z, nowX, nowZ, nextX, nextZ);
+      const speedMargin = Math.min(12.5, speedAbs * RAMP_SPEED_MARGIN_MULT);
+      const triggerRadius = radius + RAMP_TRIGGER_THICKNESS + speedMargin;
+      const closestDistance = Math.min(prevDistance, currentDistance, nextDistance, sweptFromPrev, sweptDistance);
+      const groundedEnough = car.position.y <= 0.72;
+      if (closestDistance < triggerRadius && groundedEnough && hitTimeReady && speedAbs > 1.5) {
+        const centerBoost = 1 - THREE.MathUtils.clamp(closestDistance / triggerRadius, 0, 1);
+        car.verticalVel = (10 + speedAbs * 0.092 + centerBoost * jumpLift) * RAMP_LAUNCH_VERTICAL_MULT;
+        const currentSign = Math.sign(car.speed || 1);
+        car.speed = Math.min(car.maxSpeed * 1.45, speedAbs + speedKick) * currentSign;
+        car.lastRampTime = performance.now();
+        debugLog("ramps", "ramp contact", { carIsBot: car.isBot, rampKind: ramp.userData.kind, closestDistance, speedAbs });
+        if (!car.isBot) state.score += Math.round(80 + centerBoost * (80 + jumpLift * 9));
+        break;
+      }
     }
-  });
+  }
 }
 
 function updateBots(dt) {
@@ -941,14 +1032,23 @@ function updateBots(dt) {
     updateVerticalPhysics(bot, dt);
     bot.update(dt);
 
-    if (distance < BOT_RADIUS + CAR_RADIUS && state.invincible <= 0) {
-      if (state.shield > 0.2) {
-        state.shield = Math.max(0, state.shield - 0.3);
-      } else {
-        loseLife();
-      }
-      state.invincible = 2.2;
-      bot.speed *= 0.6;
+    const segmentDistance = segmentSegmentDistance2D(
+      player.prevPosition.x,
+      player.prevPosition.z,
+      player.position.x,
+      player.position.z,
+      bot.prevPosition.x,
+      bot.prevPosition.z,
+      bot.position.x,
+      bot.position.z
+    );
+    const nowDistance = Math.hypot(player.position.x - bot.position.x, player.position.z - bot.position.z);
+    const hitDistance = Math.min(segmentDistance, nowDistance);
+    if (hitDistance < BOT_HIT_RADIUS) {
+      handlePlayerHit(bot.botId);
+      bot.speed *= 0.65;
+    } else if (state.running && Math.abs(bot.speed) + Math.abs(player.speed) > 62 && hitDistance < BOT_HIT_RADIUS * 1.6) {
+      state.missedHitSamples += 1;
     }
   });
 }
@@ -995,15 +1095,15 @@ function updateBoostPads() {
 
 function updateCamera(dt) {
   const cameraTarget = player.position.clone();
-  const back = new THREE.Vector3(Math.sin(player.heading), 0, Math.cos(player.heading)).multiplyScalar(-12);
-  const desired = cameraTarget.clone().add(back).add(new THREE.Vector3(0, 7.5, 0));
+  const back = new THREE.Vector3(Math.sin(player.heading), 0, Math.cos(player.heading)).multiplyScalar(-CAMERA_BACK_DISTANCE);
+  const desired = cameraTarget.clone().add(back).add(new THREE.Vector3(0, CAMERA_HEIGHT, 0));
 
   if (input.focusCamera || settings.cameraFocus) {
     desired.add(new THREE.Vector3(0, 4, 0));
   }
 
   camera.position.lerp(desired, dt * 3.2);
-  camera.lookAt(player.position.clone().add(new THREE.Vector3(0, 1.2, 0)));
+  camera.lookAt(player.position.clone().add(new THREE.Vector3(0, CAMERA_LOOK_HEIGHT, 0)));
 }
 
 function updateCombo(dt, steer) {
@@ -1168,19 +1268,63 @@ function loseLife() {
   player.setPosition(PLAYER_SPAWN_X, 0, PLAYER_SPAWN_Z);
   player.speed = 0;
   player.velocity.set(0, 0, 0);
+  player.verticalVel = 0;
   player.heading = 0;
   player.moveHeading = 0;
+  player.prevPosition.copy(player.position);
+}
+
+function handlePlayerHit(sourceBotId = -1) {
+  const now = performance.now();
+  if (state.postHitSafeFrames > 0) {
+    debugLog("hits", "suppressed_by_post_safe_frames", { sourceBotId, postHitSafeFrames: state.postHitSafeFrames });
+    return;
+  }
+  if (state.invincible > 0) {
+    debugLog("hits", "suppressed_by_invincibility", { sourceBotId, invincible: state.invincible });
+    return;
+  }
+  if (now - state.lastHitAt < BOT_HIT_COOLDOWN_MS) {
+    debugLog("hits", "suppressed_by_hit_cooldown", { sourceBotId, deltaMs: now - state.lastHitAt });
+    return;
+  }
+
+  state.lastHitAt = now;
+  state.lastHitByBotId = sourceBotId;
+  state.hitCount += 1;
+  debugLog("hits", "detected", { sourceBotId, hitCount: state.hitCount });
+
+  if (state.shield > 0.2) {
+    state.shield = Math.max(0, state.shield - 0.3);
+  } else {
+    loseLife();
+    debugLog("hits", "life_decremented", { lives: state.lives });
+  }
+  state.invincible = 1.15;
+  state.postHitSafeFrames = POST_HIT_SAFE_FRAMES;
+
+  for (let i = 0; i < bots.length; i += 1) {
+    const bot = bots[i];
+    if (bot.position.distanceToSquared(player.position) < 26 * 26) {
+      bot.prevPosition.copy(bot.position);
+    }
+  }
+
   if (state.lives <= 0) {
-    showMessage("System Critical", "The hunters caught you. Press Enter to retry.", "Retry", "retry");
+    dispatchGameAction("retry");
+    debugLog("hits", "restart_triggered");
   }
 }
 
 function getSteer() {
+  if (input.touchEnabled) {
+    return input.touchSteer;
+  }
   if (input.pointerActive) {
     const delta = (input.pointerStartX - input.pointerX) / (window.innerWidth * 0.4);
     return THREE.MathUtils.clamp(delta, -1, 1);
   }
-  return (input.left ? 1 : 0) + (input.right ? -1 : 0);
+  return (input.left ? -1 : 0) + (input.right ? 1 : 0);
 }
 
 function angleDifference(a, b) {
@@ -1200,6 +1344,27 @@ function startRun(resetLives = false) {
   }
   state.running = true;
   resetLevel();
+}
+
+function dispatchGameAction(action) {
+  if (action === "retry") {
+    showMessage("System Critical", "The hunters caught you. Press Enter to retry.", "Retry", "retry");
+    return;
+  }
+  if (action === "start") {
+    startRun(true);
+    return;
+  }
+  if (action === "restart-level") {
+    startRun(false);
+    return;
+  }
+  if (action === "message-next") {
+    if (!message.classList.contains("show")) return;
+    message.classList.remove("show");
+    if (state.pendingAction === "retry") startRun(true);
+    else advanceNext();
+  }
 }
 
 function showMessage(title, body, nextLabel = "Next", action = "next") {
@@ -1247,6 +1412,7 @@ function animate(now) {
   lastTime = now;
 
   if (state.running) {
+    if (state.postHitSafeFrames > 0) state.postHitSafeFrames -= 1;
     state.timeLeft = Math.max(0, state.timeLeft - dt);
     updateDifficulty(dt);
 
@@ -1281,6 +1447,7 @@ window.addEventListener("resize", () => {
 });
 
 window.addEventListener("keydown", (event) => {
+  if (event.code === "Space") event.preventDefault();
   if (event.code === "ArrowLeft" || event.code === "KeyA") input.left = true;
   if (event.code === "ArrowRight" || event.code === "KeyD") input.right = true;
   if (event.code === "ArrowUp" || event.code === "KeyW") input.throttle = true;
@@ -1288,25 +1455,22 @@ window.addEventListener("keydown", (event) => {
   if (event.code === "Space") input.drift = true;
   if (event.code === "ShiftLeft" || event.code === "ShiftRight") input.boost = true;
   if (event.code === "KeyC") input.focusCamera = true;
-  if (event.code === "KeyR") startRun(false);
+  if (event.code === "KeyR") dispatchGameAction("restart-level");
   if (event.code === "Enter") {
     if (overlay.classList.contains("show")) {
-      startRun(true);
+      dispatchGameAction("start");
     } else if (message.classList.contains("show")) {
-      message.classList.remove("show");
-      if (state.pendingAction === "retry") {
-        startRun(true);
-      } else {
-        advanceNext();
-      }
+      dispatchGameAction("message-next");
     }
   }
   if (event.code === "Escape") {
     menu.classList.toggle("show");
   }
+  debugLog("input", "keydown", event.code);
 });
 
 window.addEventListener("keyup", (event) => {
+  if (event.code === "Space") event.preventDefault();
   if (event.code === "ArrowLeft" || event.code === "KeyA") input.left = false;
   if (event.code === "ArrowRight" || event.code === "KeyD") input.right = false;
   if (event.code === "ArrowUp" || event.code === "KeyW") input.throttle = false;
@@ -1314,6 +1478,7 @@ window.addEventListener("keyup", (event) => {
   if (event.code === "Space") input.drift = false;
   if (event.code === "ShiftLeft" || event.code === "ShiftRight") input.boost = false;
   if (event.code === "KeyC") input.focusCamera = false;
+  debugLog("input", "keyup", event.code);
 });
 
 canvas.addEventListener("pointerdown", (event) => {
@@ -1331,31 +1496,85 @@ window.addEventListener("pointerup", () => {
   input.pointerActive = false;
 });
 
-touchDrift.addEventListener("pointerdown", () => (input.drift = true));
-touchDrift.addEventListener("pointerup", () => (input.drift = false));
-touchDrift.addEventListener("pointerleave", () => (input.drift = false));
-touchBoost.addEventListener("pointerdown", () => (input.boost = true));
-touchBoost.addEventListener("pointerup", () => (input.boost = false));
-touchBoost.addEventListener("pointerleave", () => (input.boost = false));
+function updateTouchInput(clientX, clientY) {
+  const rect = touchSteerPad.getBoundingClientRect();
+  const cx = rect.left + rect.width * 0.5;
+  const cy = rect.top + rect.height * 0.5;
+  const dx = clientX - cx;
+  const dy = clientY - cy;
+  const radius = rect.width * 0.42;
+  const dist = Math.hypot(dx, dy);
+  const clampedDist = Math.min(radius, dist);
+  const nx = dist > 0 ? dx / dist : 0;
+  const ny = dist > 0 ? dy / dist : 0;
+  const knobX = nx * clampedDist;
+  const knobY = ny * clampedDist;
+  touchSteerKnob.style.transform = `translate(${knobX}px, ${knobY}px)`;
+  input.touchSteer = THREE.MathUtils.clamp(knobX / radius, -1, 1);
+  input.throttle = ny < -0.1 || clampedDist > radius * 0.2;
+  input.brake = ny > 0.45;
+}
+
+function resetTouchSteer() {
+  input.touchSteer = 0;
+  touchSteerKnob.style.transform = "translate(0px, 0px)";
+  if (input.touchEnabled) {
+    input.throttle = false;
+    input.brake = false;
+  }
+}
+
+function initTouchControls() {
+  if (!touchSteerPad) return;
+  touchSteerPad.style.touchAction = "none";
+  touchSteerPad.addEventListener("pointerdown", (event) => {
+    if (!input.touchEnabled) return;
+    touchSteerPad.setPointerCapture(event.pointerId);
+    updateTouchInput(event.clientX, event.clientY);
+  });
+  touchSteerPad.addEventListener("pointermove", (event) => {
+    if (!input.touchEnabled) return;
+    if (event.pressure === 0 && event.buttons === 0) return;
+    updateTouchInput(event.clientX, event.clientY);
+  });
+  const endSteer = () => resetTouchSteer();
+  touchSteerPad.addEventListener("pointerup", endSteer);
+  touchSteerPad.addEventListener("pointercancel", endSteer);
+  touchSteerPad.addEventListener("pointerleave", endSteer);
+
+  touchDrift.addEventListener("pointerdown", () => {
+    if (input.touchEnabled) input.drift = true;
+  });
+  touchDrift.addEventListener("pointerup", () => {
+    if (input.touchEnabled) input.drift = false;
+  });
+  touchDrift.addEventListener("pointerleave", () => {
+    if (input.touchEnabled) input.drift = false;
+  });
+  touchBoost.addEventListener("pointerdown", () => {
+    if (input.touchEnabled) input.boost = true;
+  });
+  touchBoost.addEventListener("pointerup", () => {
+    if (input.touchEnabled) input.boost = false;
+  });
+  touchBoost.addEventListener("pointerleave", () => {
+    if (input.touchEnabled) input.boost = false;
+  });
+}
 
 startBtn.addEventListener("click", () => startRun(true));
 tutorialBtn.addEventListener("click", () => {
   tips.style.display = tips.style.display === "none" ? "grid" : "none";
 });
 nextBtn.addEventListener("click", () => {
-  message.classList.remove("show");
-  if (state.pendingAction === "retry") {
-    startRun(true);
-  } else {
-    advanceNext();
-  }
+  dispatchGameAction("message-next");
 });
 retryBtn.addEventListener("click", () => {
   message.classList.remove("show");
   if (state.pendingAction === "retry") {
-    startRun(true);
+    dispatchGameAction("start");
   } else {
-    startRun(false);
+    dispatchGameAction("restart-level");
   }
 });
 
@@ -1389,7 +1608,20 @@ cameraToggle.addEventListener("change", (event) => {
   settings.cameraFocus = event.target.checked;
 });
 
+if (touchModeToggle) {
+  touchModeToggle.addEventListener("change", (event) => {
+    input.touchEnabled = event.target.checked;
+    touchControlsRoot.classList.toggle("enabled", input.touchEnabled);
+    if (!input.touchEnabled) {
+      resetTouchSteer();
+      input.drift = false;
+      input.boost = false;
+    }
+  });
+}
+
 createFxPool();
+initTouchControls();
 resetLevel();
 updateHud();
 requestAnimationFrame(animate);
