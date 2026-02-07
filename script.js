@@ -182,7 +182,7 @@ const input = {
 
 const settings = {
   difficulty: "classic",
-  invertSteer: false,
+  invertSteer: true,
   cameraFocus: false
 };
 
@@ -1622,6 +1622,8 @@ if (touchModeToggle) {
 
 createFxPool();
 initTouchControls();
+invertToggle.checked = settings.invertSteer;
+cameraToggle.checked = settings.cameraFocus;
 resetLevel();
 updateHud();
 requestAnimationFrame(animate);
