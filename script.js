@@ -1265,12 +1265,28 @@ function drawMinimap() {
     const rel = heading - player.heading;
     const fx = Math.sin(rel);
     const fy = Math.cos(rel);
+    const tail = sizePx * 1.25;
+    const nose = sizePx * 1.45;
+    const wing = sizePx * 0.58;
+
+    // Direction stem removes ambiguity and makes travel heading obvious.
+    minimapCtx.strokeStyle = color;
+    minimapCtx.lineWidth = Math.max(1.4, sizePx * 0.34);
+    minimapCtx.beginPath();
+    minimapCtx.moveTo(x - fx * tail, y + fy * tail);
+    minimapCtx.lineTo(x + fx * nose, y - fy * nose);
+    minimapCtx.stroke();
+
     minimapCtx.fillStyle = color;
     minimapCtx.beginPath();
-    minimapCtx.moveTo(x + fx * sizePx, y - fy * sizePx);
-    minimapCtx.lineTo(x - fy * (sizePx * 0.58), y - fx * (sizePx * 0.58));
-    minimapCtx.lineTo(x + fy * (sizePx * 0.58), y + fx * (sizePx * 0.58));
+    minimapCtx.moveTo(x + fx * nose, y - fy * nose);
+    minimapCtx.lineTo(x - fy * wing, y - fx * wing);
+    minimapCtx.lineTo(x + fy * wing, y + fx * wing);
     minimapCtx.closePath();
+    minimapCtx.fill();
+
+    minimapCtx.beginPath();
+    minimapCtx.arc(x, y, Math.max(1.8, sizePx * 0.33), 0, Math.PI * 2);
     minimapCtx.fill();
   };
 
@@ -1315,6 +1331,14 @@ function drawMinimap() {
     minimapCtx.lineTo(worldCorners[i].x, worldCorners[i].y);
   }
   minimapCtx.closePath();
+  minimapCtx.stroke();
+
+  // Explicit north marker centered to current heading so map top is always your forward direction.
+  minimapCtx.strokeStyle = "rgba(126, 255, 255, 0.78)";
+  minimapCtx.lineWidth = 1.2;
+  minimapCtx.beginPath();
+  minimapCtx.moveTo(center, center - mapRadius + 8);
+  minimapCtx.lineTo(center, center - mapRadius + 18);
   minimapCtx.stroke();
 
   minimapCtx.fillStyle = "rgba(255, 171, 92, 0.94)";
