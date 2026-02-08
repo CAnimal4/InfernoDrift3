@@ -33,6 +33,7 @@ const tabPanels = document.querySelectorAll(".tab-panel");
 const difficultySelect = document.getElementById("difficulty-select");
 const invertToggle = document.getElementById("invert-toggle");
 const cameraToggle = document.getElementById("camera-toggle");
+const rampDensitySelect = document.getElementById("ramp-density-select");
 const touchModeToggle = document.getElementById("touch-mode-toggle");
 const touchControlsRoot = document.getElementById("touch-controls");
 const touchSteerPad = document.getElementById("touch-steer-pad");
@@ -70,7 +71,8 @@ const WORLD_SIZE = 520;
 const HALF_WORLD = WORLD_SIZE / 2;
 const CAR_RADIUS = 1.4;
 const BOT_RADIUS = 1.4;
-const POWERUP_RADIUS = 1.6;
+const POWERUP_PICKUP_RADIUS = 3.1;
+const POWERUP_VISUAL_SCALE = 1.45;
 const GRAVITY = -20;
 const PHYSICS_SUBSTEPS_BASE = 2;
 const PHYSICS_SUBSTEPS_MAX = 7;
@@ -78,8 +80,14 @@ const RAMP_TRIGGER_THICKNESS = 1.4;
 const RAMP_SPEED_MARGIN_MULT = 0.145;
 const RAMP_LAUNCH_VERTICAL_MULT = 1.24;
 const BOT_HIT_RADIUS = BOT_RADIUS + CAR_RADIUS + 0.65;
+const BOT_VERTICAL_HIT_TOLERANCE = 1.05;
+const BOT_COLLISION_HEIGHT = 0.8;
 const BOT_HIT_COOLDOWN_MS = 420;
 const POST_HIT_SAFE_FRAMES = 8;
+const SPEED_TO_MPH_MULT = 2.32;
+const PLAYER_MAX_SPEED = 64;
+const PLAYER_BOOST_SPEED_MULT = 1.32;
+const PLAYER_ACCEL_MULT = 1.12;
 const CAMERA_HEIGHT = 6.2;
 const CAMERA_BACK_DISTANCE = 11.4;
 const CAMERA_LOOK_HEIGHT = 1.05;
@@ -88,7 +96,9 @@ const DEBUG_FLAGS = {
   input: false,
   world: false,
   ramps: false,
-  hits: false
+  hits: false,
+  menu: false,
+  powerups: false
 };
 const PLAYER_SPAWN_X = 0;
 const PLAYER_SPAWN_Z = -90;
@@ -183,7 +193,8 @@ const input = {
 const settings = {
   difficulty: "classic",
   invertSteer: true,
-  cameraFocus: false
+  cameraFocus: false,
+  rampDensity: "normal"
 };
 
 const state = {
@@ -209,9 +220,13 @@ const state = {
   buildCount: 0,
   hitCount: 0,
   missedHitSamples: 0,
+  missedVerticalHitSamples: 0,
   lastHitAt: 0,
   lastHitByBotId: -1,
-  postHitSafeFrames: 0
+  postHitSafeFrames: 0,
+  slowBotsTimer: 0,
+  effectToast: "",
+  effectToastTimer: 0
 };
 
 const obstacles = [];
@@ -339,8 +354,8 @@ class Car {
     this.heading = 0;
     this.moveHeading = 0;
     this.speed = 0;
-    this.maxSpeed = isBot ? 48 : 52;
-    this.accel = isBot ? 18 : 22;
+    this.maxSpeed = isBot ? 48 : PLAYER_MAX_SPEED;
+    this.accel = isBot ? 18 : 22 * PLAYER_ACCEL_MULT;
     this.turnRate = isBot ? 2.3 : 2.8;
     this.driftGrip = 1.1;
     this.normalGrip = 3.4;
@@ -483,7 +498,7 @@ function makePowerup(type) {
     life: 0xff4d2d,
     slow: 0xffc457
   };
-  const geo = new THREE.IcosahedronGeometry(0.9, 0);
+  const geo = new THREE.IcosahedronGeometry(0.9 * POWERUP_VISUAL_SCALE, 0);
   const mesh = new THREE.Mesh(
     geo,
     new THREE.MeshStandardMaterial({ color: colors[type], emissive: colors[type], emissiveIntensity: 0.6 })
@@ -492,6 +507,11 @@ function makePowerup(type) {
   mesh.userData.spin = Math.random() * Math.PI * 2;
   scene.add(mesh);
   return mesh;
+}
+
+function setEffectToast(text) {
+  state.effectToast = text;
+  state.effectToastTimer = 1.4;
 }
 
 function makeRamp(kind = "normal") {
@@ -590,6 +610,74 @@ function generateSpacedPolarPoints(count, minRadius, maxRadius, minSpacing, maxA
   return points;
 }
 
+function getRampDensityConfig(density) {
+  const table = {
+    low: { randomCount: 10, spacing: 84, megaEvery: 7, extras: [{ x: 0, z: 96, kind: "normal" }] },
+    normal: {
+      randomCount: 18,
+      spacing: 62,
+      megaEvery: 5,
+      extras: [
+        { x: 0, z: 92, kind: "normal" },
+        { x: -62, z: -44, kind: "mega" }
+      ]
+    },
+    high: {
+      randomCount: 27,
+      spacing: 46,
+      megaEvery: 4,
+      extras: [
+        { x: 0, z: 92, kind: "normal" },
+        { x: -62, z: -44, kind: "mega" },
+        { x: 74, z: -28, kind: "mega" }
+      ]
+    },
+    extra_high: {
+      randomCount: 52,
+      spacing: 30,
+      megaEvery: 3,
+      extras: [
+        { x: 0, z: 92, kind: "normal" },
+        { x: -62, z: -44, kind: "mega" },
+        { x: 74, z: -28, kind: "mega" },
+        { x: -86, z: 78, kind: "normal" },
+        { x: 86, z: 74, kind: "normal" }
+      ]
+    }
+  };
+  return table[density] ?? table.normal;
+}
+
+function spawnRampLayout(config) {
+  ramps.length = 0;
+  const titanRamp = makeRamp("titan");
+  titanRamp.position.set(0, 0, 0);
+  ramps.push(titanRamp);
+
+  const rampPoints = generateSpacedPolarPoints(config.randomCount, 80, HALF_WORLD - 38, config.spacing);
+  rampPoints.forEach(({ x, z }, index) => {
+    const kind = index % config.megaEvery === 0 ? "mega" : "normal";
+    const ramp = makeRamp(kind);
+    ramp.position.set(x, 0, z);
+    ramps.push(ramp);
+  });
+
+  config.extras.forEach(({ x, z, kind }) => {
+    const ramp = makeRamp(kind);
+    ramp.position.set(x, 0, z);
+    ramps.push(ramp);
+  });
+}
+
+function isMenuOpen() {
+  return menu.classList.contains("show");
+}
+
+function setMenuOpen(open) {
+  menu.classList.toggle("show", open);
+  debugLog("menu", open ? "menu_open" : "menu_close");
+}
+
 function clearWorld() {
   obstacles.splice(0, obstacles.length);
   ramps.forEach((ramp) => {
@@ -623,26 +711,8 @@ function buildWorld() {
     scene.background = new THREE.Color(world.sky);
     groundMaterial.color.setHex(world.ground);
 
-    ramps.length = 0;
-    const titanRamp = makeRamp("titan");
-    titanRamp.position.set(0, 0, 0);
-    ramps.push(titanRamp);
-
-    const rampPoints = generateSpacedPolarPoints(18, 80, HALF_WORLD - 38, 62);
-    rampPoints.forEach(({ x, z }, index) => {
-      const kind = index % 5 === 0 ? "mega" : "normal";
-      const ramp = makeRamp(kind);
-      ramp.position.set(x, 0, z);
-      ramps.push(ramp);
-    });
-    [
-      { x: 0, z: 92, kind: "normal" },
-      { x: -62, z: -44, kind: "mega" }
-    ].forEach(({ x, z, kind }) => {
-      const ramp = makeRamp(kind);
-      ramp.position.set(x, 0, z);
-      ramps.push(ramp);
-    });
+    const rampConfig = getRampDensityConfig(settings.rampDensity);
+    spawnRampLayout(rampConfig);
 
     boostPads.length = 0;
     const padPoints = generateSpacedPolarPoints(12, 70, HALF_WORLD - 40, 58);
@@ -660,7 +730,12 @@ function buildWorld() {
       boostPads.push(pad);
     });
     state.buildCount += 1;
-    debugLog("world", "buildWorld complete", { buildCount: state.buildCount, ramps: ramps.length, pads: boostPads.length });
+    debugLog("world", "buildWorld complete", {
+      buildCount: state.buildCount,
+      ramps: ramps.length,
+      pads: boostPads.length,
+      rampDensity: settings.rampDensity
+    });
   } finally {
     state.isBuildingWorld = false;
   }
@@ -684,12 +759,17 @@ function resetLevel() {
   state.heat = 0;
   state.airTime = 0;
   state.wasAirborne = false;
+  state.slowBotsTimer = 0;
+  state.effectToast = "";
+  state.effectToastTimer = 0;
   const level = getLevel();
   state.timeLeft = level.time;
 
   player.setPosition(PLAYER_SPAWN_X, 0, PLAYER_SPAWN_Z);
   player.velocity.set(0, 0, 0);
   player.speed = 0;
+  player.maxSpeed = PLAYER_MAX_SPEED;
+  player.accel = 22 * PLAYER_ACCEL_MULT;
   player.heading = 0;
   player.moveHeading = 0;
   player.verticalVel = 0;
@@ -736,7 +816,7 @@ function spawnPowerups() {
   for (let i = 0; i < 6; i += 1) {
     const type = types[Math.floor(Math.random() * types.length)];
     const powerup = makePowerup(type);
-    powerup.position.set(THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.65), 1.4, THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.65));
+    powerup.position.set(THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.65), 1.8, THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.65));
     powerups.push(powerup);
   }
 }
@@ -745,7 +825,7 @@ function updatePowerups(dt) {
   powerups.forEach((powerup) => {
     powerup.userData.spin += dt * 1.4;
     powerup.rotation.y = powerup.userData.spin;
-    powerup.position.y = 1.4 + Math.sin(powerup.userData.spin * 2) * 0.2;
+    powerup.position.y = 1.8 + Math.sin(powerup.userData.spin * 2) * 0.25;
   });
 }
 
@@ -754,25 +834,33 @@ function consumePowerup(powerup) {
   if (type === "boost") {
     state.boost = 1;
     state.score += 200;
+    setEffectToast("Boost Refilled");
+    debugLog("powerups", "boost_applied");
   }
   if (type === "shield") {
-    state.shield = Math.min(1, state.shield + 0.6);
-    state.shieldTimer = 6;
+    state.shield = Math.min(1, state.shield + 0.75);
+    state.shieldTimer = 7.5;
     state.score += 150;
+    setEffectToast("Shield Up");
+    debugLog("powerups", "shield_applied");
   }
   if (type === "life") {
     const previousLives = state.lives;
     state.lives = Math.min(5, state.lives + 1);
     if (state.lives > previousLives) state.livesPulse = 1;
     state.score += 250;
+    setEffectToast(state.lives > previousLives ? "Extra Life" : "Life Maxed");
+    debugLog("powerups", "life_applied", { lives: state.lives });
   }
   if (type === "slow") {
     state.heat = Math.max(0, state.heat - 0.4);
-    bots.forEach((bot) => (bot.maxSpeed *= 0.92));
+    state.slowBotsTimer = Math.max(state.slowBotsTimer, 6);
     state.score += 120;
+    setEffectToast("Bots Slowed");
+    debugLog("powerups", "slow_applied");
   }
 
-  powerup.position.set(THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.65), 1.4, THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.65));
+  powerup.position.set(THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.65), 1.8, THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.65));
   powerup.userData.type = ["boost", "shield", "life", "slow"][Math.floor(Math.random() * 4)];
   powerup.material.color.setHex({
     boost: 0x28d7ff,
@@ -828,15 +916,15 @@ function updatePlayer(dt) {
 
   const speedAbs = Math.abs(player.speed);
   const speedRatio = THREE.MathUtils.clamp(speedAbs / player.maxSpeed, 0, 1);
-  const accel = player.accel * (boostActive ? 1.35 : 1);
+  const accel = player.accel * (boostActive ? 1.45 : 1);
   if (throttle) player.speed += accel * dt;
   if (brake) player.speed -= accel * dt * (0.9 + speedRatio * 0.25);
 
   if (!throttle && !brake) {
-    player.speed -= Math.sign(player.speed) * (8.5 + speedRatio * 5.5) * dt;
+    player.speed -= Math.sign(player.speed) * (7.3 + speedRatio * 4.6) * dt;
   }
 
-  player.speed = THREE.MathUtils.clamp(player.speed, -12, player.maxSpeed * (boostActive ? 1.25 : 1));
+  player.speed = THREE.MathUtils.clamp(player.speed, -14, player.maxSpeed * (boostActive ? PLAYER_BOOST_SPEED_MULT : 1));
 
   const turnAssist = 0.78 + (1 - speedRatio) * 0.42;
   const turnPower = player.turnRate * turnAssist * (drift ? 1.18 : 1);
@@ -942,10 +1030,17 @@ function updateVerticalPhysics(car, dt) {
   }
 }
 
+function isValidBotHit(playerCar, botCar, segmentDistance) {
+  const horizontalTouch = segmentDistance < BOT_HIT_RADIUS;
+  const verticalTouch = Math.abs(playerCar.position.y - botCar.position.y) < BOT_VERTICAL_HIT_TOLERANCE + BOT_COLLISION_HEIGHT;
+  return { valid: horizontalTouch && verticalTouch, horizontalTouch, verticalTouch };
+}
+
 function updateBots(dt) {
   const level = getLevel();
   const profile = getDifficultyProfile();
-  const targetSpeed = (level.botSpeed + state.heat * 8 * profile.heatRamp) * profile.speedMultiplier;
+  const slowMultiplier = state.slowBotsTimer > 0 ? 0.72 : 1;
+  const targetSpeed = (level.botSpeed + state.heat * 8 * profile.heatRamp) * profile.speedMultiplier * slowMultiplier;
   if (bots.length === 0) return;
 
   const packCenter = new THREE.Vector3();
@@ -1014,7 +1109,7 @@ function updateBots(dt) {
       bot.aiBurstCooldown = THREE.MathUtils.randFloat(1.1, 2.1);
       speedBoost += 0.28;
     }
-    bot.speed += bot.accel * dt * throttleFactor;
+    bot.speed += bot.accel * dt * throttleFactor * slowMultiplier;
     if (distance < desiredRange * 0.65) {
       bot.speed *= 1 - dt * 0.9;
     }
@@ -1044,9 +1139,13 @@ function updateBots(dt) {
     );
     const nowDistance = Math.hypot(player.position.x - bot.position.x, player.position.z - bot.position.z);
     const hitDistance = Math.min(segmentDistance, nowDistance);
-    if (hitDistance < BOT_HIT_RADIUS) {
+    const hitEval = isValidBotHit(player, bot, hitDistance);
+    if (hitEval.valid) {
       handlePlayerHit(bot.botId);
       bot.speed *= 0.65;
+    } else if (hitEval.horizontalTouch && !hitEval.verticalTouch) {
+      state.missedVerticalHitSamples += 1;
+      debugLog("hits", "rejected_vertical_overlap", { botId: bot.botId, playerY: player.position.y, botY: bot.position.y });
     } else if (state.running && Math.abs(bot.speed) + Math.abs(player.speed) > 62 && hitDistance < BOT_HIT_RADIUS * 1.6) {
       state.missedHitSamples += 1;
     }
@@ -1076,7 +1175,7 @@ function updateObstacles(entity) {
 function updatePowerupCollisions() {
   powerups.forEach((powerup) => {
     const dist = powerup.position.distanceTo(player.position);
-    if (dist < POWERUP_RADIUS) {
+    if (dist < POWERUP_PICKUP_RADIUS) {
       consumePowerup(powerup);
     }
   });
@@ -1086,8 +1185,8 @@ function updateBoostPads() {
   boostPads.forEach((pad) => {
     const distance = Math.hypot(player.position.x - pad.position.x, player.position.z - pad.position.z);
     if (distance < pad.userData.radius && player.position.y <= 0.2) {
-      player.speed = Math.min(player.maxSpeed * 1.2, player.speed + 14);
-      state.boost = Math.min(1, state.boost + 0.2);
+      player.speed = Math.min(player.maxSpeed * PLAYER_BOOST_SPEED_MULT, player.speed + 18);
+      state.boost = Math.min(1, state.boost + 0.24);
       state.score += 40;
     }
   });
@@ -1120,6 +1219,11 @@ function updateDifficulty(dt) {
   state.elapsed += dt;
   if (state.elapsed > 10) {
     state.heat = Math.min(1.35, state.heat + dt * 0.015 * profile.heatRamp);
+  }
+  if (state.slowBotsTimer > 0) state.slowBotsTimer = Math.max(0, state.slowBotsTimer - dt);
+  if (state.effectToastTimer > 0) {
+    state.effectToastTimer = Math.max(0, state.effectToastTimer - dt);
+    if (state.effectToastTimer === 0) state.effectToast = "";
   }
 }
 
@@ -1225,9 +1329,9 @@ function drawMinimap() {
 function updateHud() {
   const level = getLevel();
   hudWorld.textContent = getWorld().name;
-  hudLevel.textContent = level.name;
+  hudLevel.textContent = state.effectToast ? `${level.name} - ${state.effectToast}` : level.name;
   hudScore.textContent = Math.floor(state.score).toString();
-  hudSpeed.textContent = `${Math.round(Math.abs(player.speed) * 8.2)} KPH`;
+  hudSpeed.textContent = `${Math.round(Math.abs(player.speed) * SPEED_TO_MPH_MULT)} MPH`;
   renderLivesHud();
   hudCombo.textContent = `x${state.combo.toFixed(1)}`;
   const minutes = Math.floor(state.timeLeft / 60);
@@ -1337,6 +1441,7 @@ function angleDifference(a, b) {
 function startRun(resetLives = false) {
   overlay.classList.remove("show");
   message.classList.remove("show");
+  setMenuOpen(false);
   if (resetLives) {
     state.lives = 3;
     state.livesPulse = 0;
@@ -1410,8 +1515,9 @@ let lastTime = performance.now();
 function animate(now) {
   const dt = Math.min(0.033, (now - lastTime) / 1000);
   lastTime = now;
+  const pausedByMenu = isMenuOpen();
 
-  if (state.running) {
+  if (state.running && !pausedByMenu) {
     if (state.postHitSafeFrames > 0) state.postHitSafeFrames -= 1;
     state.timeLeft = Math.max(0, state.timeLeft - dt);
     updateDifficulty(dt);
@@ -1464,7 +1570,7 @@ window.addEventListener("keydown", (event) => {
     }
   }
   if (event.code === "Escape") {
-    menu.classList.toggle("show");
+    setMenuOpen(!isMenuOpen());
   }
   debugLog("input", "keydown", event.code);
 });
@@ -1579,10 +1685,10 @@ retryBtn.addEventListener("click", () => {
 });
 
 menuBtn.addEventListener("click", () => {
-  menu.classList.add("show");
+  setMenuOpen(true);
 });
 menuClose.addEventListener("click", () => {
-  menu.classList.remove("show");
+  setMenuOpen(false);
 });
 
 tabButtons.forEach((button) => {
@@ -1599,6 +1705,13 @@ difficultySelect.addEventListener("change", (event) => {
   settings.difficulty = event.target.value;
   spawnBots();
 });
+
+if (rampDensitySelect) {
+  rampDensitySelect.addEventListener("change", (event) => {
+    settings.rampDensity = event.target.value;
+    buildWorld();
+  });
+}
 
 invertToggle.addEventListener("change", (event) => {
   settings.invertSteer = event.target.checked;
@@ -1624,6 +1737,7 @@ createFxPool();
 initTouchControls();
 invertToggle.checked = settings.invertSteer;
 cameraToggle.checked = settings.cameraFocus;
+if (rampDensitySelect) rampDensitySelect.value = settings.rampDensity;
 resetLevel();
 updateHud();
 requestAnimationFrame(animate);

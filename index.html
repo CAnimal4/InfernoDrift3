@@ -37,7 +37,7 @@
         </div>
         <div class="pill">
           <span class="label">Speed</span>
-          <strong id="hud-speed">0 KPH</strong>
+          <strong id="hud-speed">0 MPH</strong>
         </div>
         <div class="pill lives-pill">
           <span class="label">Lives</span>
@@ -146,6 +146,15 @@
               <label class="field toggle">
                 <span>iPad / Touch Controls</span>
                 <input id="touch-mode-toggle" type="checkbox" />
+              </label>
+              <label class="field">
+                <span>Ramp Density</span>
+                <select id="ramp-density-select">
+                  <option value="low">Low</option>
+                  <option value="normal" selected>Normal</option>
+                  <option value="high">High</option>
+                  <option value="extra_high">Extra High</option>
+                </select>
               </label>
               <p class="hint">Changes apply instantly. Press R to restart the current level.</p>
             </section>

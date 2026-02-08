@@ -10,6 +10,12 @@
   --glass: rgba(255, 255, 255, 0.13);
   --stroke: rgba(146, 202, 255, 0.34);
   --glow: 0 0 28px rgba(86, 233, 255, 0.26);
+  --progress-top: 24px;
+  --progress-height: 10px;
+  --stack-gap: 24px;
+  --hud-top: calc(var(--progress-top) + var(--progress-height) + var(--stack-gap));
+  --status-top: calc(var(--hud-top) + 48px);
+  --minimap-top: calc(var(--status-top) + 36px);
 }
 
 * {
@@ -40,7 +46,7 @@ canvas {
   position: absolute;
   left: 24px;
   right: 24px;
-  top: 62px;
+  top: var(--hud-top);
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -86,8 +92,8 @@ canvas {
   position: absolute;
   left: 24px;
   right: 24px;
-  top: 24px;
-  height: 10px;
+  top: var(--progress-top);
+  height: var(--progress-height);
   border-radius: 999px;
   background: rgba(191, 217, 239, 0.22);
   overflow: hidden;
@@ -425,7 +431,7 @@ button:hover {
 .minimap-wrap {
   position: absolute;
   left: 24px;
-  top: 146px;
+  top: var(--minimap-top);
   z-index: 8;
   border: 1px solid var(--stroke);
   border-radius: 16px;
@@ -456,7 +462,7 @@ button:hover {
 .status {
   position: absolute;
   right: 24px;
-  top: 110px;
+  top: var(--status-top);
   display: flex;
   gap: 6px;
   z-index: 6;
@@ -488,16 +494,23 @@ button:hover {
 }
 
 @media (max-width: 720px) {
+  :root {
+    --progress-top: 18px;
+    --stack-gap: 20px;
+    --status-top: calc(var(--hud-top) + 46px);
+    --minimap-top: calc(var(--status-top) + 34px);
+  }
+
   .hud {
     left: 12px;
     right: 12px;
-    top: 48px;
+    top: var(--hud-top);
     gap: 6px;
   }
 
   .status {
     right: 12px;
-    top: 98px;
+    top: var(--status-top);
   }
 
   .progress {
@@ -512,7 +525,7 @@ button:hover {
 
   .minimap-wrap {
     left: 14px;
-    top: 132px;
+    top: var(--minimap-top);
     padding: 8px;
   }
 
