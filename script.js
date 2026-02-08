@@ -88,6 +88,9 @@ const SPEED_TO_MPH_MULT = 2.32;
 const PLAYER_MAX_SPEED = 64;
 const PLAYER_BOOST_SPEED_MULT = 1.32;
 const PLAYER_ACCEL_MULT = 1.12;
+const MINIMAP_FORWARD_BIAS = 0.2;
+const MINIMAP_HEADING_SMOOTH = 10;
+const MINIMAP_USE_MOVE_HEADING = false;
 const CAMERA_HEIGHT = 6.2;
 const CAMERA_BACK_DISTANCE = 11.4;
 const CAMERA_LOOK_HEIGHT = 1.05;
@@ -98,7 +101,8 @@ const DEBUG_FLAGS = {
   ramps: false,
   hits: false,
   menu: false,
-  powerups: false
+  powerups: false,
+  minimap: false
 };
 const PLAYER_SPAWN_X = 0;
 const PLAYER_SPAWN_Z = -90;
@@ -226,7 +230,9 @@ const state = {
   postHitSafeFrames: 0,
   slowBotsTimer: 0,
   effectToast: "",
-  effectToastTimer: 0
+  effectToastTimer: 0,
+  minimapHeading: 0,
+  minimapDebugTimer: 0
 };
 
 const obstacles = [];
@@ -784,6 +790,8 @@ function resetLevel() {
   player.accel = 22 * PLAYER_ACCEL_MULT;
   player.heading = 0;
   player.moveHeading = 0;
+  state.minimapHeading = player.heading;
+  state.minimapDebugTimer = 0;
   player.verticalVel = 0;
   player.lastRampTime = 0;
   player.prevPosition.copy(player.position);
@@ -1246,12 +1254,17 @@ function drawMinimap() {
   const center = size * 0.5;
   const mapRadius = center - pad;
   const scale = mapRadius / HALF_WORLD;
-  const cos = Math.cos(-player.heading);
-  const sin = Math.sin(-player.heading);
+  const referenceHeading = state.minimapHeading;
+  const cos = Math.cos(-referenceHeading);
+  const sin = Math.sin(-referenceHeading);
+  const forwardX = Math.sin(referenceHeading);
+  const forwardZ = Math.cos(referenceHeading);
+  const anchorWorldX = player.position.x + forwardX * (HALF_WORLD * MINIMAP_FORWARD_BIAS);
+  const anchorWorldZ = player.position.z + forwardZ * (HALF_WORLD * MINIMAP_FORWARD_BIAS);
 
   const project = (wx, wz) => {
-    const dx = wx - player.position.x;
-    const dz = wz - player.position.z;
+    const dx = wx - anchorWorldX;
+    const dz = wz - anchorWorldZ;
     const rx = dx * cos - dz * sin;
     const rz = dx * sin + dz * cos;
     return {
@@ -1262,7 +1275,7 @@ function drawMinimap() {
   };
 
   const drawHeadingMarker = (x, y, heading, color, sizePx) => {
-    const rel = heading - player.heading;
+    const rel = heading - referenceHeading;
     const fx = Math.sin(rel);
     const fy = Math.cos(rel);
     const tail = sizePx * 1.25;
@@ -1354,10 +1367,10 @@ function drawMinimap() {
   bots.forEach((bot) => {
     const p = project(bot.position.x, bot.position.z);
     if (!p.inRange) return;
-    drawHeadingMarker(p.x, p.y, bot.heading, "rgba(255, 98, 98, 0.95)", 4.2);
+    drawHeadingMarker(p.x, p.y, bot.moveHeading, "rgba(255, 98, 98, 0.95)", 4.2);
   });
 
-  drawHeadingMarker(center, center, player.heading, "#7effff", 6.4);
+  drawHeadingMarker(center, center, MINIMAP_USE_MOVE_HEADING ? player.moveHeading : player.heading, "#7effff", 6.4);
 
   minimapCtx.restore();
 }
@@ -1552,6 +1565,8 @@ function animate(now) {
   const dt = Math.min(0.033, (now - lastTime) / 1000);
   lastTime = now;
   const pausedByMenu = isMenuOpen();
+  const targetMinimapHeading = MINIMAP_USE_MOVE_HEADING ? player.moveHeading : player.heading;
+  state.minimapHeading += angleDifference(state.minimapHeading, targetMinimapHeading) * Math.min(1, dt * MINIMAP_HEADING_SMOOTH);
 
   if (state.running && !pausedByMenu) {
     if (state.postHitSafeFrames > 0) state.postHitSafeFrames -= 1;
@@ -1570,6 +1585,17 @@ function animate(now) {
 
     if (state.timeLeft <= 0) {
       completeLevel();
+    }
+    if (DEBUG_FLAGS.enabled && DEBUG_FLAGS.minimap) {
+      state.minimapDebugTimer += dt;
+      if (state.minimapDebugTimer > 0.5) {
+        state.minimapDebugTimer = 0;
+        debugLog("minimap", {
+          playerHeading: player.heading.toFixed(3),
+          playerMoveHeading: player.moveHeading.toFixed(3),
+          minimapHeading: state.minimapHeading.toFixed(3)
+        });
+      }
     }
   } else {
     updateFx(dt);
