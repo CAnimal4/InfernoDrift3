@@ -409,7 +409,7 @@ function getDifficultyProfile() {
       leadFactor: 0.38,
       reaction: 1.9,
       burstChance: 0.06,
-      speedMultiplier: 0.92,
+      speedMultiplier: 1.02,
       heatRamp: 0.75,
       teamwork: 0.15
     },
@@ -418,7 +418,7 @@ function getDifficultyProfile() {
       leadFactor: 0.62,
       reaction: 2.4,
       burstChance: 0.11,
-      speedMultiplier: 1,
+      speedMultiplier: 1.15,
       heatRamp: 1,
       teamwork: 0.62
     },
@@ -427,7 +427,7 @@ function getDifficultyProfile() {
       leadFactor: 0.84,
       reaction: 3.1,
       burstChance: 0.18,
-      speedMultiplier: 1.12,
+      speedMultiplier: 1.35,
       heatRamp: 1.4,
       teamwork: 0.9
     }
@@ -612,7 +612,7 @@ function generateSpacedPolarPoints(count, minRadius, maxRadius, minSpacing, maxA
 
 function getRampDensityConfig(density) {
   const table = {
-    low: { randomCount: 10, spacing: 84, megaEvery: 7, extras: [{ x: 0, z: 96, kind: "normal" }] },
+    low: { randomCount: 6, spacing: 118, megaEvery: 9, extras: [{ x: 0, z: 108, kind: "normal" }] },
     normal: {
       randomCount: 18,
       spacing: 62,
@@ -623,25 +623,37 @@ function getRampDensityConfig(density) {
       ]
     },
     high: {
-      randomCount: 27,
-      spacing: 46,
-      megaEvery: 4,
-      extras: [
-        { x: 0, z: 92, kind: "normal" },
-        { x: -62, z: -44, kind: "mega" },
-        { x: 74, z: -28, kind: "mega" }
-      ]
-    },
-    extra_high: {
-      randomCount: 52,
-      spacing: 30,
+      randomCount: 56,
+      spacing: 24,
       megaEvery: 3,
       extras: [
         { x: 0, z: 92, kind: "normal" },
         { x: -62, z: -44, kind: "mega" },
         { x: 74, z: -28, kind: "mega" },
+        { x: -94, z: 34, kind: "mega" },
+        { x: 96, z: 36, kind: "mega" },
+        { x: -108, z: -84, kind: "normal" },
+        { x: 108, z: -82, kind: "normal" }
+      ]
+    },
+    extra_high: {
+      randomCount: 110,
+      spacing: 14,
+      megaEvery: 2,
+      extras: [
+        { x: 0, z: 92, kind: "normal" },
+        { x: -62, z: -44, kind: "mega" },
+        { x: 74, z: -28, kind: "mega" },
         { x: -86, z: 78, kind: "normal" },
-        { x: 86, z: 74, kind: "normal" }
+        { x: 86, z: 74, kind: "normal" },
+        { x: -128, z: 0, kind: "mega" },
+        { x: 128, z: 0, kind: "mega" },
+        { x: 0, z: 128, kind: "mega" },
+        { x: 0, z: -128, kind: "mega" },
+        { x: -148, z: 96, kind: "normal" },
+        { x: 148, z: 96, kind: "normal" },
+        { x: -148, z: -96, kind: "normal" },
+        { x: 148, z: -96, kind: "normal" }
       ]
     }
   };
