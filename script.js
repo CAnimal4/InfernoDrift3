@@ -94,8 +94,8 @@ const SPEED_TO_MPH_MULT = 2.32;
 const PLAYER_MAX_SPEED = 64;
 const PLAYER_BOOST_SPEED_MULT = 1.32;
 const PLAYER_ACCEL_MULT = 1.12;
-const PAD_SPEED_BOOST_DURATION = 1.6;
-const PAD_SPEED_BOOST_MULT = 1.16;
+const PAD_SPEED_BOOST_DURATION = 1.9;
+const PAD_SPEED_BOOST_MULT = 1.22;
 const MINIMAP_FORWARD_BIAS = 0.2;
 const MINIMAP_HEADING_SMOOTH = 10;
 const MINIMAP_USE_MOVE_HEADING = false;
@@ -1057,7 +1057,7 @@ function updateVerticalPhysics(car, dt) {
       const radius = ramp.userData.radius;
       const jumpLift = ramp.userData.jumpLift ?? 4;
       const speedKick = ramp.userData.speedKick ?? 11;
-      const launchMult = ramp.userData.launchMult ?? 1;
+      const launchMult = ramp.userData.kind === "titan" ? ramp.userData.launchMult ?? 1 : 1;
       const prevDistance = Math.hypot(car.prevPosition.x - ramp.position.x, car.prevPosition.z - ramp.position.z);
       const currentDistance = Math.hypot(nowX - ramp.position.x, nowZ - ramp.position.z);
       const nextDistance = Math.hypot(nextX - ramp.position.x, nextZ - ramp.position.z);
@@ -1299,7 +1299,7 @@ function updateBoostPads() {
   boostPads.forEach((pad) => {
     const distance = Math.hypot(player.position.x - pad.position.x, player.position.z - pad.position.z);
     if (distance < pad.userData.radius && player.position.y <= 0.2) {
-      player.speed = Math.min(player.maxSpeed * PLAYER_BOOST_SPEED_MULT, player.speed + 18);
+      player.speed = Math.min(player.maxSpeed * PLAYER_BOOST_SPEED_MULT * PAD_SPEED_BOOST_MULT, player.speed + 24);
       state.boost = Math.min(1, state.boost + 0.24);
       state.padSpeedTimer = PAD_SPEED_BOOST_DURATION;
       state.padSpeedMult = PAD_SPEED_BOOST_MULT;
