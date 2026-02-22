@@ -67,7 +67,7 @@ const arena = new THREE.Group();
 const props = new THREE.Group();
 scene.add(arena, props);
 
-const WORLD_SIZE = 520;
+const WORLD_SIZE = 680;
 const HALF_WORLD = WORLD_SIZE / 2;
 const CAR_RADIUS = 1.4;
 const BOT_RADIUS = 1.4;
@@ -79,6 +79,11 @@ const PHYSICS_SUBSTEPS_MAX = 7;
 const RAMP_TRIGGER_THICKNESS = 1.4;
 const RAMP_SPEED_MARGIN_MULT = 0.145;
 const RAMP_LAUNCH_VERTICAL_MULT = 1.24;
+const RAMP_NEAR_MISS_FIX_ENABLED = true;
+const RAMP_MAX_SPEED_MARGIN = 8.25;
+const RAMP_MIN_CENTER_BOOST = 0.2;
+const RAMP_MAX_GROUNDED_Y_FOR_TRIGGER = 0.45;
+const RAMP_MIN_INWARD_APPROACH_DOT = 0.22;
 const BOT_HIT_RADIUS = BOT_RADIUS + CAR_RADIUS + 0.65;
 const BOT_VERTICAL_HIT_TOLERANCE = 1.05;
 const BOT_COLLISION_HEIGHT = 0.8;
@@ -410,6 +415,15 @@ function makeBot(color) {
 
 function getDifficultyProfile() {
   return {
+    no_bots: {
+      botSkill: 0,
+      leadFactor: 0,
+      reaction: 0,
+      burstChance: 0,
+      speedMultiplier: 0,
+      heatRamp: 0,
+      teamwork: 0
+    },
     casual: {
       botSkill: 0.72,
       leadFactor: 0.38,
@@ -524,8 +538,9 @@ function makeRamp(kind = "normal") {
   const isMega = kind === "mega";
   const isTitan = kind === "titan";
   const baseRadius = isTitan ? 21 : isMega ? 10.5 : 6.2;
-  const jumpLift = isTitan ? 16 : isMega ? 8.8 : 4;
-  const speedKick = isTitan ? 28 : isMega ? 16 : 11;
+  const jumpLift = isTitan ? 26 : isMega ? 8.8 : 4;
+  const speedKick = isTitan ? 31 : isMega ? 16 : 11;
+  const launchMult = isTitan ? 1.33 : 1;
   const rampGroup = new THREE.Group();
   const base = new THREE.Mesh(
     new THREE.CylinderGeometry(baseRadius, baseRadius, isTitan ? 0.9 : isMega ? 0.58 : 0.45, 32),
@@ -548,6 +563,7 @@ function makeRamp(kind = "normal") {
   rampGroup.userData.radius = isTitan ? 22 : isMega ? 10.8 : 6.4;
   rampGroup.userData.jumpLift = jumpLift;
   rampGroup.userData.speedKick = speedKick;
+  rampGroup.userData.launchMult = launchMult;
   rampGroup.userData.kind = kind;
   scene.add(rampGroup);
   return rampGroup;
@@ -808,9 +824,11 @@ function resetLevel() {
 function spawnBots() {
   bots.forEach((bot) => scene.remove(bot.group));
   bots.splice(0, bots.length);
+  if (settings.difficulty === "no_bots") return;
   const level = getLevel();
   const palette = getWorld().accents;
   const difficultyScale = {
+    no_bots: 0,
     casual: 0.7,
     classic: 1,
     brutal: 1.25
@@ -1020,6 +1038,7 @@ function updateVerticalPhysics(car, dt) {
       const radius = ramp.userData.radius;
       const jumpLift = ramp.userData.jumpLift ?? 4;
       const speedKick = ramp.userData.speedKick ?? 11;
+      const launchMult = ramp.userData.launchMult ?? 1;
       const prevDistance = Math.hypot(car.prevPosition.x - ramp.position.x, car.prevPosition.z - ramp.position.z);
       const currentDistance = Math.hypot(nowX - ramp.position.x, nowZ - ramp.position.z);
       const nextDistance = Math.hypot(nextX - ramp.position.x, nextZ - ramp.position.z);
@@ -1032,19 +1051,42 @@ function updateVerticalPhysics(car, dt) {
         nowZ
       );
       const sweptDistance = pointSegmentDistance2D(ramp.position.x, ramp.position.z, nowX, nowZ, nextX, nextZ);
-      const speedMargin = Math.min(12.5, speedAbs * RAMP_SPEED_MARGIN_MULT);
+      const speedMargin = Math.min(RAMP_MAX_SPEED_MARGIN, speedAbs * RAMP_SPEED_MARGIN_MULT);
       const triggerRadius = radius + RAMP_TRIGGER_THICKNESS + speedMargin;
       const closestDistance = Math.min(prevDistance, currentDistance, nextDistance, sweptFromPrev, sweptDistance);
-      const groundedEnough = car.position.y <= 0.72;
-      if (closestDistance < triggerRadius && groundedEnough && hitTimeReady && speedAbs > 1.5) {
-        const centerBoost = 1 - THREE.MathUtils.clamp(closestDistance / triggerRadius, 0, 1);
-        car.verticalVel = (10 + speedAbs * 0.092 + centerBoost * jumpLift) * RAMP_LAUNCH_VERTICAL_MULT;
+      const centerBoost = 1 - THREE.MathUtils.clamp(closestDistance / triggerRadius, 0, 1);
+      const groundedEnough = car.position.y <= RAMP_MAX_GROUNDED_Y_FOR_TRIGGER;
+      const radialX = ramp.position.x - nowX;
+      const radialZ = ramp.position.z - nowZ;
+      const radialLen = Math.hypot(radialX, radialZ) || 1;
+      const velLen = Math.hypot(car.velocity.x, car.velocity.z) || 1;
+      const inwardApproachDot = (car.velocity.x * (radialX / radialLen) + car.velocity.z * (radialZ / radialLen)) / velLen;
+      const nearMissRejected =
+        RAMP_NEAR_MISS_FIX_ENABLED &&
+        (centerBoost < RAMP_MIN_CENTER_BOOST || inwardApproachDot < RAMP_MIN_INWARD_APPROACH_DOT);
+      if (closestDistance < triggerRadius && groundedEnough && hitTimeReady && speedAbs > 1.5 && !nearMissRejected) {
+        car.verticalVel = (10 + speedAbs * 0.092 + centerBoost * jumpLift) * RAMP_LAUNCH_VERTICAL_MULT * launchMult;
         const currentSign = Math.sign(car.speed || 1);
         car.speed = Math.min(car.maxSpeed * 1.45, speedAbs + speedKick) * currentSign;
         car.lastRampTime = performance.now();
-        debugLog("ramps", "ramp contact", { carIsBot: car.isBot, rampKind: ramp.userData.kind, closestDistance, speedAbs });
+        debugLog("ramps", "ramp contact", {
+          carIsBot: car.isBot,
+          rampKind: ramp.userData.kind,
+          closestDistance,
+          speedAbs,
+          centerBoost,
+          inwardApproachDot
+        });
         if (!car.isBot) state.score += Math.round(80 + centerBoost * (80 + jumpLift * 9));
         break;
+      } else if (RAMP_NEAR_MISS_FIX_ENABLED && closestDistance < triggerRadius && groundedEnough && speedAbs > 1.5) {
+        debugLog("ramps", "ramp near_miss rejected", {
+          rampKind: ramp.userData.kind,
+          centerBoost,
+          inwardApproachDot,
+          closestDistance,
+          triggerRadius
+        });
       }
     }
   }
@@ -1057,6 +1099,7 @@ function isValidBotHit(playerCar, botCar, segmentDistance) {
 }
 
 function updateBots(dt) {
+  if (settings.difficulty === "no_bots") return;
   const level = getLevel();
   const profile = getDifficultyProfile();
   const slowMultiplier = state.slowBotsTimer > 0 ? 0.72 : 1;
