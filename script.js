@@ -94,8 +94,9 @@ const SPEED_TO_MPH_MULT = 2.32;
 const PLAYER_MAX_SPEED = 64;
 const PLAYER_BOOST_SPEED_MULT = 1.32;
 const PLAYER_ACCEL_MULT = 1.12;
-const PAD_SPEED_BOOST_DURATION = 1.9;
-const PAD_SPEED_BOOST_MULT = 1.22;
+const PAD_SPEED_BOOST_DURATION = 2.1;
+const PAD_SPEED_BOOST_MULT = 1.3;
+const SAVE_STORAGE_KEY = "infernoDrift3.save.v1";
 const MINIMAP_FORWARD_BIAS = 0.2;
 const MINIMAP_HEADING_SMOOTH = 10;
 const MINIMAP_USE_MOVE_HEADING = false;
@@ -245,6 +246,69 @@ const state = {
   minimapDebugTimer: 0,
   noBotsRecoveryTimer: 0
 };
+
+function clampWorldIndex(index) {
+  return THREE.MathUtils.clamp(index, 0, worldData.length - 1);
+}
+
+function clampLevelIndex(worldIndex, levelIndex) {
+  const safeWorld = clampWorldIndex(worldIndex);
+  const maxLevel = worldData[safeWorld].levels.length - 1;
+  return THREE.MathUtils.clamp(levelIndex, 0, maxLevel);
+}
+
+function savePersistentState() {
+  const payload = {
+    worldIndex: state.worldIndex,
+    levelIndex: state.levelIndex,
+    settings: {
+      difficulty: settings.difficulty,
+      invertSteer: settings.invertSteer,
+      cameraFocus: settings.cameraFocus,
+      rampDensity: settings.rampDensity,
+      touchEnabled: input.touchEnabled
+    }
+  };
+  try {
+    localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    debugLog("menu", "save_failed", error?.message || error);
+  }
+}
+
+function loadPersistentState() {
+  try {
+    const raw = localStorage.getItem(SAVE_STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== "object") return;
+    if (data.settings && typeof data.settings === "object") {
+      if (typeof data.settings.difficulty === "string") settings.difficulty = data.settings.difficulty;
+      if (typeof data.settings.invertSteer === "boolean") settings.invertSteer = data.settings.invertSteer;
+      if (typeof data.settings.cameraFocus === "boolean") settings.cameraFocus = data.settings.cameraFocus;
+      if (typeof data.settings.rampDensity === "string") settings.rampDensity = data.settings.rampDensity;
+      if (typeof data.settings.touchEnabled === "boolean") input.touchEnabled = data.settings.touchEnabled;
+    }
+    const worldIndex = Number.isFinite(data.worldIndex) ? data.worldIndex : 0;
+    const safeWorld = clampWorldIndex(worldIndex);
+    const levelIndex = Number.isFinite(data.levelIndex) ? data.levelIndex : 0;
+    state.worldIndex = safeWorld;
+    state.levelIndex = clampLevelIndex(safeWorld, levelIndex);
+  } catch (error) {
+    debugLog("menu", "load_failed", error?.message || error);
+  }
+}
+
+function getNextProgressIndices() {
+  const world = getWorld();
+  if (state.levelIndex < world.levels.length - 1) {
+    return { worldIndex: state.worldIndex, levelIndex: state.levelIndex + 1 };
+  }
+  if (state.worldIndex < worldData.length - 1) {
+    return { worldIndex: state.worldIndex + 1, levelIndex: 0 };
+  }
+  return { worldIndex: state.worldIndex, levelIndex: state.levelIndex };
+}
 
 const obstacles = [];
 const ramps = [];
@@ -1299,7 +1363,7 @@ function updateBoostPads() {
   boostPads.forEach((pad) => {
     const distance = Math.hypot(player.position.x - pad.position.x, player.position.z - pad.position.z);
     if (distance < pad.userData.radius && player.position.y <= 0.2) {
-      player.speed = Math.min(player.maxSpeed * PLAYER_BOOST_SPEED_MULT * PAD_SPEED_BOOST_MULT, player.speed + 24);
+      player.speed = Math.min(player.maxSpeed * PLAYER_BOOST_SPEED_MULT * PAD_SPEED_BOOST_MULT, player.speed + 30);
       state.boost = Math.min(1, state.boost + 0.24);
       state.padSpeedTimer = PAD_SPEED_BOOST_DURATION;
       state.padSpeedMult = PAD_SPEED_BOOST_MULT;
@@ -1618,6 +1682,7 @@ function startRun(resetLives = false) {
     state.score = 0;
   }
   state.running = true;
+  savePersistentState();
   resetLevel();
 }
 
@@ -1654,6 +1719,23 @@ function showMessage(title, body, nextLabel = "Next", action = "next") {
 function completeLevel() {
   const world = getWorld();
   const level = getLevel();
+  const nextProgress = getNextProgressIndices();
+  try {
+    const payload = {
+      worldIndex: nextProgress.worldIndex,
+      levelIndex: nextProgress.levelIndex,
+      settings: {
+        difficulty: settings.difficulty,
+        invertSteer: settings.invertSteer,
+        cameraFocus: settings.cameraFocus,
+        rampDensity: settings.rampDensity,
+        touchEnabled: input.touchEnabled
+      }
+    };
+    localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    debugLog("menu", "save_failed", error?.message || error);
+  }
   const isLastLevel = state.levelIndex === world.levels.length - 1;
   if (isLastLevel) {
     const isLastWorld = state.worldIndex === worldData.length - 1;
@@ -1678,6 +1760,7 @@ function advanceNext() {
     state.worldIndex = 0;
     state.levelIndex = 0;
   }
+  savePersistentState();
   startRun();
 }
 
@@ -1914,21 +1997,25 @@ difficultySelect.addEventListener("change", (event) => {
     throttle: input.throttle,
     brake: input.brake
   });
+  savePersistentState();
 });
 
 if (rampDensitySelect) {
   rampDensitySelect.addEventListener("change", (event) => {
     settings.rampDensity = event.target.value;
     buildWorld();
+    savePersistentState();
   });
 }
 
 invertToggle.addEventListener("change", (event) => {
   settings.invertSteer = event.target.checked;
+  savePersistentState();
 });
 
 cameraToggle.addEventListener("change", (event) => {
   settings.cameraFocus = event.target.checked;
+  savePersistentState();
 });
 
 if (touchModeToggle) {
@@ -1940,14 +2027,19 @@ if (touchModeToggle) {
       input.drift = false;
       input.boost = false;
     }
+    savePersistentState();
   });
 }
 
+loadPersistentState();
 createFxPool();
 initTouchControls();
+difficultySelect.value = settings.difficulty;
 invertToggle.checked = settings.invertSteer;
 cameraToggle.checked = settings.cameraFocus;
 if (rampDensitySelect) rampDensitySelect.value = settings.rampDensity;
+if (touchModeToggle) touchModeToggle.checked = input.touchEnabled;
+touchControlsRoot.classList.toggle("enabled", input.touchEnabled);
 resetLevel();
 updateHud();
 requestAnimationFrame(animate);
