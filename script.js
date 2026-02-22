@@ -58,7 +58,7 @@ sun.position.set(18, 28, 14);
 scene.add(sun);
 
 const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x0c1016, roughness: 0.9 });
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(1400, 1400), groundMaterial);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(1800, 1800), groundMaterial);
 ground.rotation.x = -Math.PI / 2;
 ground.position.y = -0.02;
 scene.add(ground);
@@ -67,7 +67,7 @@ const arena = new THREE.Group();
 const props = new THREE.Group();
 scene.add(arena, props);
 
-const WORLD_SIZE = 680;
+const WORLD_SIZE = 820;
 const HALF_WORLD = WORLD_SIZE / 2;
 const CAR_RADIUS = 1.4;
 const BOT_RADIUS = 1.4;
@@ -80,10 +80,11 @@ const RAMP_TRIGGER_THICKNESS = 1.4;
 const RAMP_SPEED_MARGIN_MULT = 0.145;
 const RAMP_LAUNCH_VERTICAL_MULT = 1.24;
 const RAMP_NEAR_MISS_FIX_ENABLED = true;
-const RAMP_MAX_SPEED_MARGIN = 8.25;
-const RAMP_MIN_CENTER_BOOST = 0.2;
+const RAMP_MAX_SPEED_MARGIN = 6.2;
+const RAMP_MIN_CENTER_BOOST = 0.33;
 const RAMP_MAX_GROUNDED_Y_FOR_TRIGGER = 0.45;
-const RAMP_MIN_INWARD_APPROACH_DOT = 0.22;
+const RAMP_MIN_INWARD_APPROACH_DOT = 0.28;
+const RAMP_CORE_RADIUS_FACTOR = 0.62;
 const BOT_HIT_RADIUS = BOT_RADIUS + CAR_RADIUS + 0.65;
 const BOT_VERTICAL_HIT_TOLERANCE = 1.05;
 const BOT_COLLISION_HEIGHT = 0.8;
@@ -93,6 +94,8 @@ const SPEED_TO_MPH_MULT = 2.32;
 const PLAYER_MAX_SPEED = 64;
 const PLAYER_BOOST_SPEED_MULT = 1.32;
 const PLAYER_ACCEL_MULT = 1.12;
+const PAD_SPEED_BOOST_DURATION = 1.6;
+const PAD_SPEED_BOOST_MULT = 1.16;
 const MINIMAP_FORWARD_BIAS = 0.2;
 const MINIMAP_HEADING_SMOOTH = 10;
 const MINIMAP_USE_MOVE_HEADING = false;
@@ -234,10 +237,13 @@ const state = {
   lastHitByBotId: -1,
   postHitSafeFrames: 0,
   slowBotsTimer: 0,
+  padSpeedTimer: 0,
+  padSpeedMult: 1,
   effectToast: "",
   effectToastTimer: 0,
   minimapHeading: 0,
-  minimapDebugTimer: 0
+  minimapDebugTimer: 0,
+  noBotsRecoveryTimer: 0
 };
 
 const obstacles = [];
@@ -417,11 +423,11 @@ function getDifficultyProfile() {
   return {
     no_bots: {
       botSkill: 0,
-      leadFactor: 0,
-      reaction: 0,
+      leadFactor: 0.2,
+      reaction: 1.2,
       burstChance: 0,
-      speedMultiplier: 0,
-      heatRamp: 0,
+      speedMultiplier: 0.95,
+      heatRamp: 0.75,
       teamwork: 0
     },
     casual: {
@@ -429,7 +435,7 @@ function getDifficultyProfile() {
       leadFactor: 0.38,
       reaction: 1.9,
       burstChance: 0.06,
-      speedMultiplier: 1.02,
+      speedMultiplier: 1.07,
       heatRamp: 0.75,
       teamwork: 0.15
     },
@@ -438,7 +444,7 @@ function getDifficultyProfile() {
       leadFactor: 0.62,
       reaction: 2.4,
       burstChance: 0.11,
-      speedMultiplier: 1.15,
+      speedMultiplier: 1.23,
       heatRamp: 1,
       teamwork: 0.62
     },
@@ -447,7 +453,7 @@ function getDifficultyProfile() {
       leadFactor: 0.84,
       reaction: 3.1,
       burstChance: 0.18,
-      speedMultiplier: 1.35,
+      speedMultiplier: 1.46,
       heatRamp: 1.4,
       teamwork: 0.9
     }
@@ -688,7 +694,7 @@ function spawnRampLayout(config) {
   titanRamp.position.set(0, 0, 0);
   ramps.push(titanRamp);
 
-  const rampPoints = generateSpacedPolarPoints(config.randomCount, 80, HALF_WORLD - 38, config.spacing);
+  const rampPoints = generateSpacedPolarPoints(config.randomCount, 120, HALF_WORLD - 55, config.spacing);
   rampPoints.forEach(({ x, z }, index) => {
     const kind = index % config.megaEvery === 0 ? "mega" : "normal";
     const ramp = makeRamp(kind);
@@ -749,7 +755,7 @@ function buildWorld() {
     spawnRampLayout(rampConfig);
 
     boostPads.length = 0;
-    const padPoints = generateSpacedPolarPoints(12, 70, HALF_WORLD - 40, 58);
+    const padPoints = generateSpacedPolarPoints(14, 105, HALF_WORLD - 52, 64);
     padPoints.forEach(({ x, z }) => {
       const pad = makeBoostPad();
       pad.position.set(x, 0, z);
@@ -815,15 +821,22 @@ function resetLevel() {
   state.lastHitAt = 0;
   state.lastHitByBotId = -1;
   state.postHitSafeFrames = 0;
+  state.padSpeedTimer = 0;
+  state.padSpeedMult = 1;
+  state.noBotsRecoveryTimer = 0;
 
   buildWorld();
   spawnBots();
   spawnPowerups();
 }
 
-function spawnBots() {
+function clearBotState() {
   bots.forEach((bot) => scene.remove(bot.group));
   bots.splice(0, bots.length);
+}
+
+function spawnBots() {
+  clearBotState();
   if (settings.difficulty === "no_bots") return;
   const level = getLevel();
   const palette = getWorld().accents;
@@ -854,7 +867,7 @@ function spawnPowerups() {
   for (let i = 0; i < 6; i += 1) {
     const type = types[Math.floor(Math.random() * types.length)];
     const powerup = makePowerup(type);
-    powerup.position.set(THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.65), 1.8, THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.65));
+    powerup.position.set(THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.85), 1.8, THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.85));
     powerups.push(powerup);
   }
 }
@@ -898,7 +911,7 @@ function consumePowerup(powerup) {
     debugLog("powerups", "slow_applied");
   }
 
-  powerup.position.set(THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.65), 1.8, THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.65));
+  powerup.position.set(THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.85), 1.8, THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.85));
   powerup.userData.type = ["boost", "shield", "life", "slow"][Math.floor(Math.random() * 4)];
   powerup.material.color.setHex({
     boost: 0x28d7ff,
@@ -951,10 +964,15 @@ function updatePlayer(dt) {
   const brake = input.brake ? 1 : 0;
   const drift = input.drift;
   const boostActive = input.boost && state.boost > 0.05;
+  if (state.padSpeedTimer > 0) {
+    state.padSpeedTimer = Math.max(0, state.padSpeedTimer - dt);
+    if (state.padSpeedTimer === 0) state.padSpeedMult = 1;
+  }
+  const padMult = state.padSpeedTimer > 0 ? state.padSpeedMult : 1;
 
   const speedAbs = Math.abs(player.speed);
   const speedRatio = THREE.MathUtils.clamp(speedAbs / player.maxSpeed, 0, 1);
-  const accel = player.accel * (boostActive ? 1.45 : 1);
+  const accel = player.accel * (boostActive ? 1.45 : 1) * padMult;
   if (throttle) player.speed += accel * dt;
   if (brake) player.speed -= accel * dt * (0.9 + speedRatio * 0.25);
 
@@ -962,7 +980,8 @@ function updatePlayer(dt) {
     player.speed -= Math.sign(player.speed) * (7.3 + speedRatio * 4.6) * dt;
   }
 
-  player.speed = THREE.MathUtils.clamp(player.speed, -14, player.maxSpeed * (boostActive ? PLAYER_BOOST_SPEED_MULT : 1));
+  const boostCap = boostActive ? PLAYER_BOOST_SPEED_MULT : 1;
+  player.speed = THREE.MathUtils.clamp(player.speed, -14, player.maxSpeed * boostCap * padMult);
 
   const turnAssist = 0.78 + (1 - speedRatio) * 0.42;
   const turnPower = player.turnRate * turnAssist * (drift ? 1.18 : 1);
@@ -1059,11 +1078,24 @@ function updateVerticalPhysics(car, dt) {
       const radialX = ramp.position.x - nowX;
       const radialZ = ramp.position.z - nowZ;
       const radialLen = Math.hypot(radialX, radialZ) || 1;
+      const prevRadialX = ramp.position.x - car.prevPosition.x;
+      const prevRadialZ = ramp.position.z - car.prevPosition.z;
+      const prevRadialLen = Math.hypot(prevRadialX, prevRadialZ) || 1;
       const velLen = Math.hypot(car.velocity.x, car.velocity.z) || 1;
       const inwardApproachDot = (car.velocity.x * (radialX / radialLen) + car.velocity.z * (radialZ / radialLen)) / velLen;
+      const segVelX = nowX - car.prevPosition.x;
+      const segVelZ = nowZ - car.prevPosition.z;
+      const segVelLen = Math.hypot(segVelX, segVelZ) || 1;
+      const inwardApproachDotPrev =
+        (segVelX * (prevRadialX / prevRadialLen) + segVelZ * (prevRadialZ / prevRadialLen)) / segVelLen;
+      const coreRadius = radius * RAMP_CORE_RADIUS_FACTOR;
+      const coreHit = Math.min(currentDistance, nextDistance, sweptDistance) <= coreRadius;
       const nearMissRejected =
         RAMP_NEAR_MISS_FIX_ENABLED &&
-        (centerBoost < RAMP_MIN_CENTER_BOOST || inwardApproachDot < RAMP_MIN_INWARD_APPROACH_DOT);
+        (centerBoost < RAMP_MIN_CENTER_BOOST ||
+          inwardApproachDot < RAMP_MIN_INWARD_APPROACH_DOT ||
+          inwardApproachDotPrev < RAMP_MIN_INWARD_APPROACH_DOT ||
+          !coreHit);
       if (closestDistance < triggerRadius && groundedEnough && hitTimeReady && speedAbs > 1.5 && !nearMissRejected) {
         car.verticalVel = (10 + speedAbs * 0.092 + centerBoost * jumpLift) * RAMP_LAUNCH_VERTICAL_MULT * launchMult;
         const currentSign = Math.sign(car.speed || 1);
@@ -1075,15 +1107,34 @@ function updateVerticalPhysics(car, dt) {
           closestDistance,
           speedAbs,
           centerBoost,
-          inwardApproachDot
+          inwardApproachDot,
+          inwardApproachDotPrev
         });
+        if (!car.isBot) {
+          spawnFx(
+            car.position.clone().add(new THREE.Vector3(0, 0.4, 0)),
+            new THREE.Vector3((Math.random() - 0.5) * 2.5, 2.4, (Math.random() - 0.5) * 2.5),
+            ramp.userData.kind === "titan" ? 0xffc46e : 0xff9c66,
+            ramp.userData.kind === "titan" ? 0.75 : 0.52,
+            0.28
+          );
+        }
         if (!car.isBot) state.score += Math.round(80 + centerBoost * (80 + jumpLift * 9));
         break;
       } else if (RAMP_NEAR_MISS_FIX_ENABLED && closestDistance < triggerRadius && groundedEnough && speedAbs > 1.5) {
+        const reason =
+          centerBoost < RAMP_MIN_CENTER_BOOST
+            ? "edge_graze"
+            : inwardApproachDot < RAMP_MIN_INWARD_APPROACH_DOT || inwardApproachDotPrev < RAMP_MIN_INWARD_APPROACH_DOT
+              ? "tangent_pass"
+              : "high_speed_near_miss";
         debugLog("ramps", "ramp near_miss rejected", {
+          reason,
           rampKind: ramp.userData.kind,
           centerBoost,
           inwardApproachDot,
+          inwardApproachDotPrev,
+          coreHit,
           closestDistance,
           triggerRadius
         });
@@ -1250,7 +1301,19 @@ function updateBoostPads() {
     if (distance < pad.userData.radius && player.position.y <= 0.2) {
       player.speed = Math.min(player.maxSpeed * PLAYER_BOOST_SPEED_MULT, player.speed + 18);
       state.boost = Math.min(1, state.boost + 0.24);
+      state.padSpeedTimer = PAD_SPEED_BOOST_DURATION;
+      state.padSpeedMult = PAD_SPEED_BOOST_MULT;
       state.score += 40;
+      setEffectToast("Pad Surge");
+      if (Math.random() < 0.55) {
+        spawnFx(
+          player.position.clone().add(new THREE.Vector3(0, 0.35, 0)),
+          new THREE.Vector3((Math.random() - 0.5) * 2.1, 2 + Math.random() * 1.4, (Math.random() - 0.5) * 2.1),
+          0x5feaff,
+          0.55,
+          0.24
+        );
+      }
     }
   });
 }
@@ -1279,9 +1342,10 @@ function updateCombo(dt, steer) {
 
 function updateDifficulty(dt) {
   const profile = getDifficultyProfile();
+  const heatRamp = settings.difficulty === "no_bots" ? 0.75 : profile.heatRamp;
   state.elapsed += dt;
   if (state.elapsed > 10) {
-    state.heat = Math.min(1.35, state.heat + dt * 0.015 * profile.heatRamp);
+    state.heat = Math.min(1.35, state.heat + dt * 0.015 * heatRamp);
   }
   if (state.slowBotsTimer > 0) state.slowBotsTimer = Math.max(0, state.slowBotsTimer - dt);
   if (state.effectToastTimer > 0) {
@@ -1388,6 +1452,16 @@ function drawMinimap() {
   }
   minimapCtx.closePath();
   minimapCtx.stroke();
+  if (DEBUG_FLAGS.enabled && DEBUG_FLAGS.minimap) {
+    const edgeOverflow = worldCorners.some((corner) => {
+      const dx = corner.x - center;
+      const dy = corner.y - center;
+      return Math.hypot(dx, dy) > mapRadius * 1.18;
+    });
+    if (edgeOverflow) {
+      debugLog("minimap", "edge_projection_overflow", { halfWorld: HALF_WORLD, mapRadius, scale: Number(scale.toFixed(4)) });
+    }
+  }
 
   // Explicit north marker centered to current heading so map top is always your forward direction.
   minimapCtx.strokeStyle = "rgba(126, 255, 255, 0.78)";
@@ -1530,6 +1604,10 @@ function angleDifference(a, b) {
   return diff;
 }
 
+function hasMovementInput() {
+  return input.throttle || input.brake || input.left || input.right || Math.abs(input.touchSteer) > 0.08;
+}
+
 function startRun(resetLives = false) {
   overlay.classList.remove("show");
   message.classList.remove("show");
@@ -1625,6 +1703,20 @@ function animate(now) {
     updatePowerupCollisions();
     updateBoostPads();
     updateFx(dt);
+
+    if (settings.difficulty === "no_bots" && hasMovementInput() && Math.abs(player.speed) < 0.2) {
+      state.noBotsRecoveryTimer += dt;
+      if (state.noBotsRecoveryTimer > 0.55) {
+        state.steerSmoothed = 0;
+        player.velocity.set(0, 0, 0);
+        player.maxSpeed = PLAYER_MAX_SPEED;
+        player.accel = 22 * PLAYER_ACCEL_MULT;
+        state.noBotsRecoveryTimer = 0;
+        debugLog("menu", "no_bots_recovery_applied");
+      }
+    } else {
+      state.noBotsRecoveryTimer = 0;
+    }
 
     if (state.timeLeft <= 0) {
       completeLevel();
@@ -1807,8 +1899,21 @@ tabButtons.forEach((button) => {
 });
 
 difficultySelect.addEventListener("change", (event) => {
+  const previousDifficulty = settings.difficulty;
   settings.difficulty = event.target.value;
+  clearBotState();
   spawnBots();
+  state.noBotsRecoveryTimer = 0;
+  state.padSpeedTimer = 0;
+  state.padSpeedMult = 1;
+  debugLog("menu", "difficulty_changed", {
+    from: previousDifficulty,
+    to: settings.difficulty,
+    running: state.running,
+    speed: player.speed,
+    throttle: input.throttle,
+    brake: input.brake
+  });
 });
 
 if (rampDensitySelect) {
