@@ -35,6 +35,12 @@ const invertToggle = document.getElementById("invert-toggle");
 const cameraToggle = document.getElementById("camera-toggle");
 const rampDensitySelect = document.getElementById("ramp-density-select");
 const touchModeToggle = document.getElementById("touch-mode-toggle");
+const bodySelect = document.getElementById("body-select");
+const wheelSelect = document.getElementById("wheel-select");
+const styleSelect = document.getElementById("style-select");
+const powerSelect = document.getElementById("power-select");
+const customStats = document.getElementById("custom-stats");
+const customHint = document.getElementById("custom-hint");
 const touchControlsRoot = document.getElementById("touch-controls");
 const touchSteerPad = document.getElementById("touch-steer-pad");
 const touchSteerKnob = document.getElementById("touch-steer-knob");
@@ -97,6 +103,12 @@ const PLAYER_ACCEL_MULT = 1.12;
 const PAD_SPEED_BOOST_DURATION = 2.1;
 const PAD_SPEED_BOOST_MULT = 1.3;
 const SAVE_STORAGE_KEY = "infernoDrift3.save.v1";
+const DEFAULT_CUSTOMIZATION = {
+  bodyId: "street",
+  wheelId: "grip",
+  styleId: "balanced",
+  powerId: "nitro_core"
+};
 const MINIMAP_FORWARD_BIAS = 0.2;
 const MINIMAP_HEADING_SMOOTH = 10;
 const MINIMAP_USE_MOVE_HEADING = false;
@@ -188,6 +200,133 @@ const worldData = [
   }
 ];
 
+const BODY_OPTIONS = [
+  {
+    id: "street",
+    name: "Street",
+    unlock: { worldIndex: 0, levelIndex: 0 },
+    visual: {
+      primary: 0xfff1d0,
+      accent: 0x12151c,
+      bodyScale: [1.8, 0.5, 3.2],
+      hoodScale: [1.6, 0.35, 1.2],
+      cabinScale: [1.3, 0.45, 1.2],
+      trunkScale: [1.4, 0.3, 0.8],
+      lightScale: 1
+    },
+    stats: { topSpeed: 0, accel: 0, grip: 0.02, drift: 0, boost: 0.02 }
+  },
+  {
+    id: "muscle",
+    name: "Muscle",
+    unlock: { worldIndex: 1, levelIndex: 1 },
+    visual: {
+      primary: 0xff8a5c,
+      accent: 0x24110f,
+      bodyScale: [2.05, 0.58, 3.45],
+      hoodScale: [1.75, 0.4, 1.3],
+      cabinScale: [1.2, 0.42, 1.05],
+      trunkScale: [1.55, 0.34, 0.92],
+      lightScale: 1.08
+    },
+    stats: { topSpeed: 4, accel: 0.08, grip: -0.06, drift: 0.16, boost: 0.06 }
+  },
+  {
+    id: "interceptor",
+    name: "Interceptor",
+    unlock: { worldIndex: 2, levelIndex: 0 },
+    visual: {
+      primary: 0x8fe7ff,
+      accent: 0x0d1c29,
+      bodyScale: [1.72, 0.46, 3.42],
+      hoodScale: [1.48, 0.3, 1.35],
+      cabinScale: [1.12, 0.42, 1.34],
+      trunkScale: [1.26, 0.28, 0.9],
+      lightScale: 0.94
+    },
+    stats: { topSpeed: 6, accel: -0.03, grip: 0.08, drift: -0.04, boost: 0.03 }
+  }
+];
+
+const WHEEL_OPTIONS = [
+  {
+    id: "grip",
+    name: "Grip",
+    unlock: { worldIndex: 0, levelIndex: 0 },
+    visual: { radius: 0.35, width: 0.4, color: 0x0b0f14, rim: 0xc4d7ea },
+    stats: { topSpeed: 0, accel: 0.04, grip: 0.1, drift: -0.08, boost: 0 }
+  },
+  {
+    id: "drift",
+    name: "Drift",
+    unlock: { worldIndex: 1, levelIndex: 0 },
+    visual: { radius: 0.37, width: 0.34, color: 0x12161d, rim: 0xffb866 },
+    stats: { topSpeed: 1, accel: 0.02, grip: -0.08, drift: 0.18, boost: 0.04 }
+  },
+  {
+    id: "heavy",
+    name: "Heavy",
+    unlock: { worldIndex: 3, levelIndex: 0 },
+    visual: { radius: 0.4, width: 0.46, color: 0x0e1118, rim: 0x86f0ff },
+    stats: { topSpeed: 2, accel: -0.06, grip: 0.14, drift: -0.04, boost: 0.08 }
+  }
+];
+
+const STYLE_OPTIONS = [
+  {
+    id: "balanced",
+    name: "Balanced",
+    unlock: { worldIndex: 0, levelIndex: 0 },
+    description: "Even handling with reliable grip and boost.",
+    stats: { topSpeed: 0, accel: 0, turnRate: 0, grip: 0, drift: 0, boost: 0 }
+  },
+  {
+    id: "drift",
+    name: "Drift",
+    unlock: { worldIndex: 0, levelIndex: 2 },
+    description: "Looser rear end, faster drift combo build, weaker straight-line hold.",
+    stats: { topSpeed: 1, accel: 0.05, turnRate: 0.22, grip: -0.18, drift: 0.26, boost: 0.02 }
+  },
+  {
+    id: "grip",
+    name: "Grip",
+    unlock: { worldIndex: 1, levelIndex: 2 },
+    description: "Sharper turn-in and stronger traction with less drift angle.",
+    stats: { topSpeed: -1, accel: 0.08, turnRate: 0.14, grip: 0.24, drift: -0.18, boost: 0.04 }
+  }
+];
+
+const POWER_OPTIONS = [
+  {
+    id: "nitro_core",
+    name: "Nitro Core",
+    unlock: { worldIndex: 0, levelIndex: 0 },
+    description: "Higher boost ceiling with slower drain and stronger pad surge.",
+    stats: { boostReserve: 0.18, boostDrainMult: 0.78, padSpeedMult: 0.1, padDuration: 0.2 }
+  },
+  {
+    id: "shock_guard",
+    name: "Shock Guard",
+    unlock: { worldIndex: 2, levelIndex: 1 },
+    description: "Longer post-hit safety window and stronger shield retention.",
+    stats: { invincibleBonus: 0.4, shieldRetention: 0.08 }
+  },
+  {
+    id: "air_control",
+    name: "Air Control",
+    unlock: { worldIndex: 3, levelIndex: 1 },
+    description: "Better aerial steering and smoother landings off ramps.",
+    stats: { airTurnRate: 1.5, landingBoost: 0.14, rampStick: 0.08 }
+  },
+  {
+    id: "mag_traction",
+    name: "Mag Traction",
+    unlock: { worldIndex: 4, levelIndex: 0 },
+    description: "Cuts slide, improves ramp contact, and stabilizes exits.",
+    stats: { grip: 0.18, drift: -0.15, rampStick: 0.18 }
+  }
+];
+
 const input = {
   left: false,
   right: false,
@@ -208,6 +347,10 @@ const settings = {
   invertSteer: true,
   cameraFocus: false,
   rampDensity: "normal"
+};
+
+const customization = {
+  ...DEFAULT_CUSTOMIZATION
 };
 
 const state = {
@@ -244,7 +387,8 @@ const state = {
   effectToastTimer: 0,
   minimapHeading: 0,
   minimapDebugTimer: 0,
-  noBotsRecoveryTimer: 0
+  noBotsRecoveryTimer: 0,
+  playerLoadoutStats: null
 };
 
 function clampWorldIndex(index) {
@@ -257,6 +401,92 @@ function clampLevelIndex(worldIndex, levelIndex) {
   return THREE.MathUtils.clamp(levelIndex, 0, maxLevel);
 }
 
+function isProgressAtLeast(progress, unlock) {
+  if (!unlock) return true;
+  const worldIndex = progress?.worldIndex ?? 0;
+  const levelIndex = progress?.levelIndex ?? 0;
+  if (worldIndex > unlock.worldIndex) return true;
+  if (worldIndex < unlock.worldIndex) return false;
+  return levelIndex >= (unlock.levelIndex ?? 0);
+}
+
+function getProgressSnapshot() {
+  return {
+    worldIndex: state.worldIndex,
+    levelIndex: state.levelIndex
+  };
+}
+
+function isOptionUnlocked(option, progress = getProgressSnapshot()) {
+  return isProgressAtLeast(progress, option.unlock);
+}
+
+function getUnlockedOptions(group, progress = getProgressSnapshot()) {
+  return group.filter((option) => isOptionUnlocked(option, progress));
+}
+
+function getOptionById(group, id, fallbackId) {
+  return group.find((option) => option.id === id) ?? group.find((option) => option.id === fallbackId) ?? group[0];
+}
+
+function getUnlockLabel(option) {
+  if (!option.unlock) return "Unlocked";
+  const worldLabel = `World ${option.unlock.worldIndex + 1}`;
+  const levelLabel = `Level ${option.unlock.levelIndex + 1}`;
+  return option.unlock.levelIndex > 0 ? `Unlocks at ${worldLabel}, ${levelLabel}` : `Unlocks at ${worldLabel}`;
+}
+
+function clampCustomizationToUnlocks(progress = getProgressSnapshot()) {
+  const groups = [
+    [BODY_OPTIONS, "bodyId", DEFAULT_CUSTOMIZATION.bodyId],
+    [WHEEL_OPTIONS, "wheelId", DEFAULT_CUSTOMIZATION.wheelId],
+    [STYLE_OPTIONS, "styleId", DEFAULT_CUSTOMIZATION.styleId],
+    [POWER_OPTIONS, "powerId", DEFAULT_CUSTOMIZATION.powerId]
+  ];
+  for (const [group, key, fallbackId] of groups) {
+    const selected = getOptionById(group, customization[key], fallbackId);
+    if (isOptionUnlocked(selected, progress)) continue;
+    const fallback = getUnlockedOptions(group, progress)[0] ?? getOptionById(group, fallbackId, fallbackId);
+    customization[key] = fallback.id;
+  }
+}
+
+function getCurrentCustomization() {
+  return {
+    body: getOptionById(BODY_OPTIONS, customization.bodyId, DEFAULT_CUSTOMIZATION.bodyId),
+    wheels: getOptionById(WHEEL_OPTIONS, customization.wheelId, DEFAULT_CUSTOMIZATION.wheelId),
+    style: getOptionById(STYLE_OPTIONS, customization.styleId, DEFAULT_CUSTOMIZATION.styleId),
+    power: getOptionById(POWER_OPTIONS, customization.powerId, DEFAULT_CUSTOMIZATION.powerId)
+  };
+}
+
+function computePlayerLoadoutStats() {
+  const loadout = getCurrentCustomization();
+  const topSpeed = PLAYER_MAX_SPEED + loadout.body.stats.topSpeed + loadout.wheels.stats.topSpeed + loadout.style.stats.topSpeed;
+  const accelMult = PLAYER_ACCEL_MULT + loadout.body.stats.accel + loadout.wheels.stats.accel + loadout.style.stats.accel;
+  const gripBias = loadout.body.stats.grip + loadout.wheels.stats.grip + loadout.style.stats.grip + (loadout.power.stats.grip ?? 0);
+  const driftBias = loadout.body.stats.drift + loadout.wheels.stats.drift + loadout.style.stats.drift + (loadout.power.stats.drift ?? 0);
+  const boostBias = loadout.body.stats.boost + loadout.wheels.stats.boost + loadout.style.stats.boost;
+  return {
+    topSpeed,
+    accel: 22 * accelMult,
+    turnRate: 2.8 + loadout.style.stats.turnRate,
+    normalGrip: 3.9 + gripBias * 1.6,
+    driftGrip: 1.25 + gripBias * 0.6 - driftBias * 0.25,
+    driftSlip: 0.58 + driftBias * 0.35,
+    roadSlip: Math.max(0.08, 0.18 + driftBias * 0.12 - gripBias * 0.06),
+    boostSpeedMult: PLAYER_BOOST_SPEED_MULT + boostBias * 0.12 + (loadout.power.stats.boostReserve ?? 0),
+    boostDrainMult: loadout.power.stats.boostDrainMult ?? 1,
+    padSpeedMult: PAD_SPEED_BOOST_MULT + (loadout.power.stats.padSpeedMult ?? 0),
+    padDuration: PAD_SPEED_BOOST_DURATION + (loadout.power.stats.padDuration ?? 0),
+    invincibleDuration: 1.15 + (loadout.power.stats.invincibleBonus ?? 0),
+    shieldRetention: loadout.power.stats.shieldRetention ?? 0,
+    airTurnRate: loadout.power.stats.airTurnRate ?? 1,
+    landingBoost: loadout.power.stats.landingBoost ?? 0,
+    rampStick: loadout.power.stats.rampStick ?? 0
+  };
+}
+
 function savePersistentState() {
   const payload = {
     worldIndex: state.worldIndex,
@@ -267,6 +497,12 @@ function savePersistentState() {
       cameraFocus: settings.cameraFocus,
       rampDensity: settings.rampDensity,
       touchEnabled: input.touchEnabled
+    },
+    customization: {
+      bodyId: customization.bodyId,
+      wheelId: customization.wheelId,
+      styleId: customization.styleId,
+      powerId: customization.powerId
     }
   };
   try {
@@ -289,11 +525,18 @@ function loadPersistentState() {
       if (typeof data.settings.rampDensity === "string") settings.rampDensity = data.settings.rampDensity;
       if (typeof data.settings.touchEnabled === "boolean") input.touchEnabled = data.settings.touchEnabled;
     }
+    if (data.customization && typeof data.customization === "object") {
+      if (typeof data.customization.bodyId === "string") customization.bodyId = data.customization.bodyId;
+      if (typeof data.customization.wheelId === "string") customization.wheelId = data.customization.wheelId;
+      if (typeof data.customization.styleId === "string") customization.styleId = data.customization.styleId;
+      if (typeof data.customization.powerId === "string") customization.powerId = data.customization.powerId;
+    }
     const worldIndex = Number.isFinite(data.worldIndex) ? data.worldIndex : 0;
     const safeWorld = clampWorldIndex(worldIndex);
     const levelIndex = Number.isFinite(data.levelIndex) ? data.levelIndex : 0;
     state.worldIndex = safeWorld;
     state.levelIndex = clampLevelIndex(safeWorld, levelIndex);
+    clampCustomizationToUnlocks({ worldIndex: safeWorld, levelIndex: state.levelIndex });
   } catch (error) {
     debugLog("menu", "load_failed", error?.message || error);
   }
@@ -381,53 +624,9 @@ function disposeObject3D(root) {
 class Car {
   constructor({ color = 0xff4d2d, accent = 0x10131a, isBot = false } = {}) {
     this.group = new THREE.Group();
-
-    const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.5, 3.2), new THREE.MeshStandardMaterial({ color, roughness: 0.4 }));
-    body.position.y = 0.45;
-
-    const hood = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.35, 1.2), new THREE.MeshStandardMaterial({ color: accent, roughness: 0.5 }));
-    hood.position.set(0, 0.65, 0.8);
-
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.45, 1.2), colorGlass);
-    cabin.position.set(0, 0.85, -0.1);
-
-    const trunk = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.3, 0.8), new THREE.MeshStandardMaterial({ color: accent, roughness: 0.5 }));
-    trunk.position.set(0, 0.62, -1.2);
-
-    const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.4, 14);
-    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x0b0f14, roughness: 0.8 });
-
+    this.visualRoot = new THREE.Group();
     this.wheels = [];
-    const wheelOffsets = [
-      [-0.9, 0.25, 1.1],
-      [0.9, 0.25, 1.1],
-      [-0.9, 0.25, -1.1],
-      [0.9, 0.25, -1.1]
-    ];
-
-    wheelOffsets.forEach(([x, y, z]) => {
-      const wheel = new THREE.Mesh(wheelGeo, wheelMat);
-      wheel.rotation.z = Math.PI / 2;
-      wheel.position.set(x, y, z);
-      this.group.add(wheel);
-      this.wheels.push(wheel);
-    });
-
-    const lightMat = new THREE.MeshStandardMaterial({ color: 0xffd4b5, emissive: 0xff7a45, emissiveIntensity: 1 });
-    const lightGeo = new THREE.BoxGeometry(0.2, 0.15, 0.1);
-    const lightLeft = new THREE.Mesh(lightGeo, lightMat);
-    const lightRight = lightLeft.clone();
-    lightLeft.position.set(-0.55, 0.55, 1.7);
-    lightRight.position.set(0.55, 0.55, 1.7);
-
-    const tailMat = new THREE.MeshStandardMaterial({ color: 0xff4d2d, emissive: 0xff4d2d, emissiveIntensity: 1 });
-    const tailGeo = new THREE.BoxGeometry(0.22, 0.1, 0.1);
-    const tailLeft = new THREE.Mesh(tailGeo, tailMat);
-    const tailRight = tailLeft.clone();
-    tailLeft.position.set(-0.55, 0.55, -1.7);
-    tailRight.position.set(0.55, 0.55, -1.7);
-
-    this.group.add(body, hood, cabin, trunk, lightLeft, lightRight, tailLeft, tailRight);
+    this.group.add(this.visualRoot);
     this.group.castShadow = false;
 
     this.position = new THREE.Vector3();
@@ -447,9 +646,96 @@ class Car {
     this.lastRampTime = 0;
     this.aiBurstCooldown = 0;
     this.prevPosition = new THREE.Vector3();
+    this.visualConfig = null;
 
+    this.rebuildVisual({
+      primary: color,
+      accent,
+      bodyScale: [1.8, 0.5, 3.2],
+      hoodScale: [1.6, 0.35, 1.2],
+      cabinScale: [1.3, 0.45, 1.2],
+      trunkScale: [1.4, 0.3, 0.8],
+      lightScale: 1,
+      wheelRadius: 0.35,
+      wheelWidth: 0.4,
+      wheelColor: 0x0b0f14,
+      rimColor: 0xbcc9d6,
+      spoiler: false
+    });
     this.group.position.copy(this.position);
     this.prevPosition.copy(this.position);
+  }
+
+  rebuildVisual(config) {
+    while (this.visualRoot.children.length) {
+      const child = this.visualRoot.children[this.visualRoot.children.length - 1];
+      this.visualRoot.remove(child);
+      disposeObject3D(child);
+    }
+    this.wheels = [];
+    this.visualConfig = config;
+    const primaryMat = new THREE.MeshStandardMaterial({ color: config.primary, roughness: 0.4 });
+    const accentMat = new THREE.MeshStandardMaterial({ color: config.accent, roughness: 0.5 });
+    const lightMat = new THREE.MeshStandardMaterial({ color: 0xffd4b5, emissive: 0xff7a45, emissiveIntensity: 1 });
+    const tailMat = new THREE.MeshStandardMaterial({ color: 0xff4d2d, emissive: 0xff4d2d, emissiveIntensity: 1 });
+    const rimMat = new THREE.MeshStandardMaterial({ color: config.rimColor, roughness: 0.25, metalness: 0.55 });
+    const wheelMat = new THREE.MeshStandardMaterial({ color: config.wheelColor, roughness: 0.82 });
+
+    const body = new THREE.Mesh(new THREE.BoxGeometry(...config.bodyScale), primaryMat);
+    body.position.y = 0.45 + (config.bodyScale[1] - 0.5) * 0.3;
+
+    const hood = new THREE.Mesh(new THREE.BoxGeometry(...config.hoodScale), accentMat);
+    hood.position.set(0, 0.65 + (config.hoodScale[1] - 0.35) * 0.4, 0.8 + (config.hoodScale[2] - 1.2) * 0.2);
+
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(...config.cabinScale), colorGlass.clone());
+    cabin.position.set(0, 0.85 + (config.cabinScale[1] - 0.45) * 0.4, -0.08);
+
+    const trunk = new THREE.Mesh(new THREE.BoxGeometry(...config.trunkScale), accentMat.clone());
+    trunk.position.set(0, 0.62 + (config.trunkScale[1] - 0.3) * 0.32, -1.2 - (config.trunkScale[2] - 0.8) * 0.3);
+
+    this.visualRoot.add(body, hood, cabin, trunk);
+
+    if (config.spoiler) {
+      const spoiler = new THREE.Mesh(new THREE.BoxGeometry(1.22, 0.08, 0.52), accentMat.clone());
+      spoiler.position.set(0, 1.08, -1.75);
+      const spoilerStandL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.22, 0.08), accentMat.clone());
+      const spoilerStandR = spoilerStandL.clone();
+      spoilerStandL.position.set(-0.38, 0.94, -1.66);
+      spoilerStandR.position.set(0.38, 0.94, -1.66);
+      this.visualRoot.add(spoiler, spoilerStandL, spoilerStandR);
+    }
+
+    const wheelGeo = new THREE.CylinderGeometry(config.wheelRadius, config.wheelRadius, config.wheelWidth, 16);
+    const rimGeo = new THREE.CylinderGeometry(config.wheelRadius * 0.58, config.wheelRadius * 0.58, config.wheelWidth + 0.02, 12);
+    const wheelOffsets = [
+      [-0.9, 0.25, 1.1],
+      [0.9, 0.25, 1.1],
+      [-0.9, 0.25, -1.1],
+      [0.9, 0.25, -1.1]
+    ];
+    wheelOffsets.forEach(([x, y, z]) => {
+      const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(x, y + (config.wheelRadius - 0.35) * 0.35, z);
+      const rim = new THREE.Mesh(rimGeo, rimMat);
+      rim.rotation.z = Math.PI / 2;
+      wheel.add(rim);
+      this.visualRoot.add(wheel);
+      this.wheels.push(wheel);
+    });
+
+    const lightGeo = new THREE.BoxGeometry(0.2 * config.lightScale, 0.15, 0.1);
+    const lightLeft = new THREE.Mesh(lightGeo, lightMat);
+    const lightRight = lightLeft.clone();
+    lightLeft.position.set(-0.55, 0.55, 1.7);
+    lightRight.position.set(0.55, 0.55, 1.7);
+
+    const tailGeo = new THREE.BoxGeometry(0.22 * config.lightScale, 0.1, 0.1);
+    const tailLeft = new THREE.Mesh(tailGeo, tailMat);
+    const tailRight = tailLeft.clone();
+    tailLeft.position.set(-0.55, 0.55, -1.7);
+    tailRight.position.set(0.55, 0.55, -1.7);
+    this.visualRoot.add(lightLeft, lightRight, tailLeft, tailRight);
   }
 
   setPosition(x, y, z) {
@@ -475,6 +761,30 @@ class Car {
 
 const player = new Car({ color: 0xfff1d0, accent: 0x12151c, isBot: false });
 scene.add(player.group);
+
+function rebuildPlayerCarMesh() {
+  const loadout = getCurrentCustomization();
+  player.rebuildVisual({
+    ...loadout.body.visual,
+    wheelRadius: loadout.wheels.visual.radius,
+    wheelWidth: loadout.wheels.visual.width,
+    wheelColor: loadout.wheels.visual.color,
+    rimColor: loadout.wheels.visual.rim,
+    spoiler: loadout.body.id === "interceptor"
+  });
+}
+
+function applyPlayerCustomization(options = {}) {
+  clampCustomizationToUnlocks(options.progress);
+  state.playerLoadoutStats = computePlayerLoadoutStats();
+  player.maxSpeed = state.playerLoadoutStats.topSpeed;
+  player.accel = state.playerLoadoutStats.accel;
+  player.turnRate = state.playerLoadoutStats.turnRate;
+  player.normalGrip = state.playerLoadoutStats.normalGrip;
+  player.driftGrip = state.playerLoadoutStats.driftGrip;
+  rebuildPlayerCarMesh();
+  refreshCustomizationMenu();
+}
 
 function makeBot(color) {
   const bot = new Car({ color, accent: 0x14141a, isBot: true });
@@ -872,8 +1182,6 @@ function resetLevel() {
   player.setPosition(PLAYER_SPAWN_X, 0, PLAYER_SPAWN_Z);
   player.velocity.set(0, 0, 0);
   player.speed = 0;
-  player.maxSpeed = PLAYER_MAX_SPEED;
-  player.accel = 22 * PLAYER_ACCEL_MULT;
   player.heading = 0;
   player.moveHeading = 0;
   state.minimapHeading = player.heading;
@@ -889,6 +1197,7 @@ function resetLevel() {
   state.padSpeedMult = 1;
   state.noBotsRecoveryTimer = 0;
 
+  applyPlayerCustomization();
   buildWorld();
   spawnBots();
   spawnPowerups();
@@ -933,6 +1242,57 @@ function spawnPowerups() {
     const powerup = makePowerup(type);
     powerup.position.set(THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.85), 1.8, THREE.MathUtils.randFloatSpread(HALF_WORLD * 1.85));
     powerups.push(powerup);
+  }
+}
+
+function renderCustomizationOptions(selectEl, options, selectedId, progress) {
+  if (!selectEl) return;
+  selectEl.innerHTML = "";
+  options.forEach((option) => {
+    const optionEl = document.createElement("option");
+    const unlocked = isOptionUnlocked(option, progress);
+    optionEl.value = option.id;
+    optionEl.textContent = unlocked ? option.name : `${option.name} — ${getUnlockLabel(option)}`;
+    optionEl.disabled = !unlocked;
+    optionEl.selected = option.id === selectedId;
+    selectEl.appendChild(optionEl);
+  });
+}
+
+function refreshCustomizationMenu() {
+  const progress = getProgressSnapshot();
+  clampCustomizationToUnlocks(progress);
+  renderCustomizationOptions(bodySelect, BODY_OPTIONS, customization.bodyId, progress);
+  renderCustomizationOptions(wheelSelect, WHEEL_OPTIONS, customization.wheelId, progress);
+  renderCustomizationOptions(styleSelect, STYLE_OPTIONS, customization.styleId, progress);
+  renderCustomizationOptions(powerSelect, POWER_OPTIONS, customization.powerId, progress);
+  if (!customStats) return;
+  const loadout = getCurrentCustomization();
+  const stats = state.playerLoadoutStats ?? computePlayerLoadoutStats();
+  customStats.innerHTML = [
+    ["Top Speed", `${Math.round(stats.topSpeed * SPEED_TO_MPH_MULT)} MPH`, loadout.body.name],
+    ["Acceleration", `${stats.accel.toFixed(1)}`, loadout.style.description],
+    ["Grip", `${stats.normalGrip.toFixed(2)}`, loadout.wheels.name],
+    ["Drift", `${stats.driftSlip.toFixed(2)}`, loadout.style.name],
+    ["Boost", `${stats.boostSpeedMult.toFixed(2)}x`, loadout.power.name],
+    ["Power", loadout.power.name, loadout.power.description]
+  ]
+    .map(
+      ([label, value, detail]) =>
+        `<div class="custom-stat"><span class="label">${label}</span><strong>${value}</strong><span>${detail}</span></div>`
+    )
+    .join("");
+  if (customHint) {
+    const lockedCounts = [
+      BODY_OPTIONS.filter((option) => !isOptionUnlocked(option, progress)).length,
+      WHEEL_OPTIONS.filter((option) => !isOptionUnlocked(option, progress)).length,
+      STYLE_OPTIONS.filter((option) => !isOptionUnlocked(option, progress)).length,
+      POWER_OPTIONS.filter((option) => !isOptionUnlocked(option, progress)).length
+    ].reduce((sum, count) => sum + count, 0);
+    customHint.textContent =
+      lockedCounts > 0
+        ? `${lockedCounts} loadout upgrades are still locked. Clear more worlds to unlock them.`
+        : "All loadout parts unlocked. Mix bodies, wheels, handling, and powers freely.";
   }
 }
 
@@ -1020,6 +1380,7 @@ function emitDrivingFx(dt, steer, driftActive, boostActive) {
 }
 
 function updatePlayer(dt) {
+  const loadoutStats = state.playerLoadoutStats ?? computePlayerLoadoutStats();
   const inputSteer = getSteer() * (settings.invertSteer ? -1 : 1);
   const steerFilter = input.drift ? 5.2 : 8.2;
   state.steerSmoothed += (inputSteer - state.steerSmoothed) * dt * steerFilter;
@@ -1044,16 +1405,17 @@ function updatePlayer(dt) {
     player.speed -= Math.sign(player.speed) * (7.3 + speedRatio * 4.6) * dt;
   }
 
-  const boostCap = boostActive ? PLAYER_BOOST_SPEED_MULT : 1;
+  const boostCap = boostActive ? loadoutStats.boostSpeedMult : 1;
   player.speed = THREE.MathUtils.clamp(player.speed, -14, player.maxSpeed * boostCap * padMult);
 
   const turnAssist = 0.78 + (1 - speedRatio) * 0.42;
   const turnPower = player.turnRate * turnAssist * (drift ? 1.18 : 1);
   const direction = player.speed >= 0 ? 1 : -1;
-  player.heading += steer * turnPower * dt * direction;
+  const steerMultiplier = player.position.y > 0.2 ? loadoutStats.airTurnRate : 1;
+  player.heading += steer * turnPower * dt * direction * steerMultiplier;
 
-  const grip = drift ? 1.25 : 3.9;
-  const slipAmount = drift ? 0.58 : 0.18;
+  const grip = drift ? player.driftGrip : player.normalGrip;
+  const slipAmount = drift ? loadoutStats.driftSlip : loadoutStats.roadSlip;
   player.moveHeading = THREE.MathUtils.lerp(player.moveHeading, player.heading, grip * dt);
 
   const forward = new THREE.Vector3(Math.sin(player.moveHeading), 0, Math.cos(player.moveHeading));
@@ -1062,7 +1424,7 @@ function updatePlayer(dt) {
   player.velocity.addScaledVector(lateral, steer * speedAbs * slipAmount * 0.08);
 
   if (boostActive) {
-    state.boost = Math.max(0, state.boost - dt * 0.18);
+    state.boost = Math.max(0, state.boost - dt * 0.18 * loadoutStats.boostDrainMult);
   } else {
     state.boost = Math.min(1, state.boost + dt * 0.08);
   }
@@ -1085,6 +1447,7 @@ function updatePlayer(dt) {
 
 function updateVerticalPhysics(car, dt) {
   const speedAbs = Math.abs(car.speed);
+  const loadoutStats = !car.isBot ? state.playerLoadoutStats ?? computePlayerLoadoutStats() : null;
   const substeps = THREE.MathUtils.clamp(Math.ceil(speedAbs / 17), PHYSICS_SUBSTEPS_BASE, PHYSICS_SUBSTEPS_MAX);
   const stepDt = dt / substeps;
 
@@ -1099,7 +1462,7 @@ function updateVerticalPhysics(car, dt) {
         const bonus = Math.min(2.5, state.airTime);
         if (bonus > 0.2) {
           state.score += Math.round(120 * bonus);
-          state.boost = Math.min(1, state.boost + bonus * 0.15);
+          state.boost = Math.min(1, state.boost + bonus * (0.15 + (loadoutStats?.landingBoost ?? 0)));
         }
         state.airTime = 0;
         state.wasAirborne = false;
@@ -1138,7 +1501,7 @@ function updateVerticalPhysics(car, dt) {
       const triggerRadius = radius + RAMP_TRIGGER_THICKNESS + speedMargin;
       const closestDistance = Math.min(prevDistance, currentDistance, nextDistance, sweptFromPrev, sweptDistance);
       const centerBoost = 1 - THREE.MathUtils.clamp(closestDistance / triggerRadius, 0, 1);
-      const groundedEnough = car.position.y <= RAMP_MAX_GROUNDED_Y_FOR_TRIGGER;
+      const groundedEnough = car.position.y <= RAMP_MAX_GROUNDED_Y_FOR_TRIGGER + (!car.isBot ? loadoutStats?.rampStick ?? 0 : 0);
       const radialX = ramp.position.x - nowX;
       const radialZ = ramp.position.z - nowZ;
       const radialLen = Math.hypot(radialX, radialZ) || 1;
@@ -1360,13 +1723,14 @@ function updatePowerupCollisions() {
 }
 
 function updateBoostPads() {
+  const loadoutStats = state.playerLoadoutStats ?? computePlayerLoadoutStats();
   boostPads.forEach((pad) => {
     const distance = Math.hypot(player.position.x - pad.position.x, player.position.z - pad.position.z);
     if (distance < pad.userData.radius && player.position.y <= 0.2) {
-      player.speed = Math.min(player.maxSpeed * PLAYER_BOOST_SPEED_MULT * PAD_SPEED_BOOST_MULT, player.speed + 30);
+      player.speed = Math.min(player.maxSpeed * loadoutStats.boostSpeedMult * loadoutStats.padSpeedMult, player.speed + 30);
       state.boost = Math.min(1, state.boost + 0.24);
-      state.padSpeedTimer = PAD_SPEED_BOOST_DURATION;
-      state.padSpeedMult = PAD_SPEED_BOOST_MULT;
+      state.padSpeedTimer = loadoutStats.padDuration;
+      state.padSpeedMult = loadoutStats.padSpeedMult;
       state.score += 40;
       setEffectToast("Pad Surge");
       if (Math.random() < 0.55) {
@@ -1609,6 +1973,7 @@ function loseLife() {
 }
 
 function handlePlayerHit(sourceBotId = -1) {
+  const loadoutStats = state.playerLoadoutStats ?? computePlayerLoadoutStats();
   const now = performance.now();
   if (state.postHitSafeFrames > 0) {
     debugLog("hits", "suppressed_by_post_safe_frames", { sourceBotId, postHitSafeFrames: state.postHitSafeFrames });
@@ -1629,12 +1994,12 @@ function handlePlayerHit(sourceBotId = -1) {
   debugLog("hits", "detected", { sourceBotId, hitCount: state.hitCount });
 
   if (state.shield > 0.2) {
-    state.shield = Math.max(0, state.shield - 0.3);
+    state.shield = Math.max(0, state.shield - (0.3 - loadoutStats.shieldRetention));
   } else {
     loseLife();
     debugLog("hits", "life_decremented", { lives: state.lives });
   }
-  state.invincible = 1.15;
+  state.invincible = loadoutStats.invincibleDuration;
   state.postHitSafeFrames = POST_HIT_SAFE_FRAMES;
 
   for (let i = 0; i < bots.length; i += 1) {
@@ -1730,6 +2095,12 @@ function completeLevel() {
         cameraFocus: settings.cameraFocus,
         rampDensity: settings.rampDensity,
         touchEnabled: input.touchEnabled
+      },
+      customization: {
+        bodyId: customization.bodyId,
+        wheelId: customization.wheelId,
+        styleId: customization.styleId,
+        powerId: customization.powerId
       }
     };
     localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(payload));
@@ -1790,10 +2161,11 @@ function animate(now) {
     if (settings.difficulty === "no_bots" && hasMovementInput() && Math.abs(player.speed) < 0.2) {
       state.noBotsRecoveryTimer += dt;
       if (state.noBotsRecoveryTimer > 0.55) {
+        const loadoutStats = state.playerLoadoutStats ?? computePlayerLoadoutStats();
         state.steerSmoothed = 0;
         player.velocity.set(0, 0, 0);
-        player.maxSpeed = PLAYER_MAX_SPEED;
-        player.accel = 22 * PLAYER_ACCEL_MULT;
+        player.maxSpeed = loadoutStats.topSpeed;
+        player.accel = loadoutStats.accel;
         state.noBotsRecoveryTimer = 0;
         debugLog("menu", "no_bots_recovery_applied");
       }
@@ -2018,6 +2390,41 @@ cameraToggle.addEventListener("change", (event) => {
   savePersistentState();
 });
 
+function handleCustomizationChange(group, key, fallbackId, event) {
+  const selected = getOptionById(group, event.target.value, fallbackId);
+  if (!isOptionUnlocked(selected)) {
+    refreshCustomizationMenu();
+    return;
+  }
+  customization[key] = selected.id;
+  applyPlayerCustomization();
+  savePersistentState();
+}
+
+if (bodySelect) {
+  bodySelect.addEventListener("change", (event) => {
+    handleCustomizationChange(BODY_OPTIONS, "bodyId", DEFAULT_CUSTOMIZATION.bodyId, event);
+  });
+}
+
+if (wheelSelect) {
+  wheelSelect.addEventListener("change", (event) => {
+    handleCustomizationChange(WHEEL_OPTIONS, "wheelId", DEFAULT_CUSTOMIZATION.wheelId, event);
+  });
+}
+
+if (styleSelect) {
+  styleSelect.addEventListener("change", (event) => {
+    handleCustomizationChange(STYLE_OPTIONS, "styleId", DEFAULT_CUSTOMIZATION.styleId, event);
+  });
+}
+
+if (powerSelect) {
+  powerSelect.addEventListener("change", (event) => {
+    handleCustomizationChange(POWER_OPTIONS, "powerId", DEFAULT_CUSTOMIZATION.powerId, event);
+  });
+}
+
 if (touchModeToggle) {
   touchModeToggle.addEventListener("change", (event) => {
     input.touchEnabled = event.target.checked;
@@ -2040,6 +2447,7 @@ cameraToggle.checked = settings.cameraFocus;
 if (rampDensitySelect) rampDensitySelect.value = settings.rampDensity;
 if (touchModeToggle) touchModeToggle.checked = input.touchEnabled;
 touchControlsRoot.classList.toggle("enabled", input.touchEnabled);
+applyPlayerCustomization({ progress: getProgressSnapshot() });
 resetLevel();
 updateHud();
 requestAnimationFrame(animate);
