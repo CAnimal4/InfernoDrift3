@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>InfernoDrift 3</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="game-wrap">
+      <canvas id="game"></canvas>
+
+      <div class="progress"><span id="progress"></span></div>
+
+      <div class="hud">
+        <div class="pill">
+          <span class="label">World</span>
+          <strong id="hud-world">—</strong>
+        </div>
+        <div class="pill">
+          <span class="label">Level</span>
+          <strong id="hud-level">—</strong>
+        </div>
+        <div class="pill">
+          <span class="label">Time</span>
+          <strong id="hud-time">0:00</strong>
+        </div>
+        <div class="pill">
+          <span class="label">Score</span>
+          <strong id="hud-score">0</strong>
+        </div>
+        <div class="pill">
+          <span class="label">Speed</span>
+          <strong id="hud-speed">0 MPH</strong>
+        </div>
+        <div class="pill lives-pill">
+          <span class="label">Lives</span>
+          <div id="hud-hearts" class="hearts" aria-label="Lives"></div>
+          <strong id="hud-lives" class="lives-count">3/5</strong>
+        </div>
+        <div class="pill">
+          <span class="label">Drift</span>
+          <strong id="hud-combo">x1</strong>
+        </div>
+        <button class="pill menu-btn" id="menu-btn" type="button">Menu</button>
+      </div>
+
+      <div class="status">
+        <div class="pill">
+          <div class="label">Boost</div>
+          <div class="bar"><span id="boost-bar"></span></div>
+        </div>
+        <div class="pill">
+          <div class="label">Shield</div>
+          <div class="bar"><span id="shield-bar"></span></div>
+        </div>
+      </div>
+
+      <div class="touch-controls" id="touch-controls">
+        <div class="touch-stick-wrap">
+          <div id="touch-steer-pad" class="touch-steer-pad" aria-label="Touch Steering">
+            <div id="touch-steer-knob" class="touch-steer-knob"></div>
+          </div>
+        </div>
+        <div class="touch-buttons">
+          <button id="touch-drift">Drift</button>
+          <button id="touch-boost" class="primary">Boost</button>
+        </div>
+      </div>
+
+      <div class="minimap-wrap">
+        <div class="minimap-title">Radar</div>
+        <canvas id="minimap" width="180" height="180" aria-label="Minimap"></canvas>
+      </div>
+
+      <div class="overlay show" id="overlay">
+        <div class="panel">
+          <h1>InfernoDrift 3</h1>
+          <p class="subtitle">
+            Free-roam survival racers. Drift through neon arenas, grab powerups, launch off ramps,
+            and stay ahead of relentless hunter bots.
+          </p>
+          <div class="cta-row">
+            <button class="primary" id="start-btn">Start Ignite Run</button>
+            <button class="ghost" id="tutorial-btn">Quick Tips</button>
+          </div>
+          <div class="controls" id="tips" style="display: none;">
+            <div><span>Steer:</span> Arrow Keys or A / D</div>
+            <div><span>Throttle:</span> W / Arrow Up</div>
+            <div><span>Brake/Reverse:</span> S / Arrow Down</div>
+            <div><span>Drift:</span> Space</div>
+            <div><span>Boost:</span> Shift</div>
+            <div><span>Camera Focus:</span> C</div>
+            <div><span>Restart Level:</span> R</div>
+            <div><span>Start / Next:</span> Enter</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="overlay" id="message">
+        <div class="panel">
+          <h2 id="message-title">Level Complete</h2>
+          <p class="subtitle" id="message-body">You melted the asphalt. Ready for the next heat?</p>
+          <div class="cta-row">
+            <button class="primary" id="next-btn">Next</button>
+            <button class="ghost" id="retry-btn">Retry</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="overlay" id="menu">
+        <div class="panel menu-panel">
+          <div class="menu-header">
+            <h2>InfernoDrift 3</h2>
+            <button class="ghost" id="menu-close" type="button">Close</button>
+          </div>
+          <div class="menu-tabs">
+            <button class="tab-btn active" data-tab="settings" type="button">Settings</button>
+            <button class="tab-btn" data-tab="customize" type="button">Customize</button>
+            <button class="tab-btn" data-tab="controls" type="button">Controls</button>
+            <button class="tab-btn" data-tab="howto" type="button">How to Play</button>
+          </div>
+          <div class="menu-content">
+            <section class="tab-panel active" id="tab-settings">
+              <label class="field">
+                <span>Difficulty</span>
+                <select id="difficulty-select">
+                  <option value="no_bots">No Bots</option>
+                  <option value="casual">Casual</option>
+                  <option value="classic" selected>Classic</option>
+                  <option value="brutal">Brutal</option>
+                </select>
+              </label>
+              <label class="field toggle">
+                <span>Invert Steering</span>
+                <input id="invert-toggle" type="checkbox" />
+              </label>
+              <label class="field toggle">
+                <span>Camera Focus</span>
+                <input id="camera-toggle" type="checkbox" />
+              </label>
+              <label class="field toggle">
+                <span>iPad / Touch Controls</span>
+                <input id="touch-mode-toggle" type="checkbox" />
+              </label>
+              <label class="field">
+                <span>Ramp Density</span>
+                <select id="ramp-density-select">
+                  <option value="low">Low</option>
+                  <option value="normal" selected>Normal</option>
+                  <option value="high">High</option>
+                  <option value="extra_high">Extra High</option>
+                </select>
+              </label>
+              <p class="hint">Changes apply instantly. Press R to restart the current level.</p>
+            </section>
+            <section class="tab-panel" id="tab-customize">
+              <div class="custom-grid">
+                <label class="field">
+                  <span>Body</span>
+                  <select id="body-select"></select>
+                </label>
+                <label class="field">
+                  <span>Wheels</span>
+                  <select id="wheel-select"></select>
+                </label>
+                <label class="field">
+                  <span>Driving Style</span>
+                  <select id="style-select"></select>
+                </label>
+                <label class="field">
+                  <span>Power</span>
+                  <select id="power-select"></select>
+                </label>
+              </div>
+              <div class="custom-stats" id="custom-stats"></div>
+              <p class="hint" id="custom-hint">Your loadout changes your car instantly and unlocks more options as you clear worlds.</p>
+            </section>
+            <section class="tab-panel" id="tab-controls">
+              <ul class="menu-list">
+                <li><strong>Steer:</strong> Arrow Keys or A / D</li>
+                <li><strong>Throttle:</strong> W / Arrow Up</li>
+                <li><strong>Brake/Reverse:</strong> S / Arrow Down</li>
+                <li><strong>Drift:</strong> Space</li>
+                <li><strong>Boost:</strong> Shift</li>
+                <li><strong>Camera Focus:</strong> C</li>
+                <li><strong>Restart Level:</strong> R</li>
+                <li><strong>Menu:</strong> Esc</li>
+              </ul>
+            </section>
+            <section class="tab-panel" id="tab-howto">
+              <ol class="menu-list">
+                <li>Stay alive until the timer ends to clear the level.</li>
+                <li>Hunter bots will chase you — dodge or bait them wide.</li>
+                <li>Hit neon ramps to launch and earn airtime bonus.</li>
+                <li>Boost pads refill boost and sling you forward.</li>
+                <li>Collect powerups: Boost, Shield, Life, or Slow.</li>
+              </ol>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="script.js"></script>
+  </body>
+</html>
