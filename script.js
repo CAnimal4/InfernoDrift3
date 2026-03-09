@@ -602,17 +602,19 @@ function clampLevelIndex(worldIndex, levelIndex) {
   return THREE.MathUtils.clamp(levelIndex, 0, maxLevel);
 }
 
-function detectDeviceType() {
+function resolveDeviceClassFromViewport() {
   const width = window.innerWidth;
   const height = window.innerHeight;
   const shortest = Math.min(width, height);
-  const coarsePointer = window.matchMedia ? window.matchMedia("(pointer: coarse)").matches : false;
-  const touchPoints = navigator.maxTouchPoints || 0;
-  const touchCapable = coarsePointer || touchPoints > 0;
-  if (!touchCapable) return "desktop";
   if (shortest <= 540 || width <= 820) return "phone";
   if (shortest <= 1024 || width <= 1366) return "tablet";
   return "desktop";
+}
+
+function detectTouchCapability() {
+  const coarsePointer = window.matchMedia ? window.matchMedia("(pointer: coarse)").matches : false;
+  const touchPoints = navigator.maxTouchPoints || 0;
+  return coarsePointer || touchPoints > 0;
 }
 
 function getDeviceAssistTuning() {
@@ -628,10 +630,14 @@ function setMinimapSize(size) {
 }
 
 function applyDeviceProfile() {
-  const resolvedType = settings.deviceMode === "auto" ? detectDeviceType() : settings.deviceMode;
+  const touchAvailable = detectTouchCapability();
+  const resolvedType = settings.deviceMode === "auto" ? resolveDeviceClassFromViewport() : settings.deviceMode;
   const profile = DEVICE_PROFILES[resolvedType] ?? DEVICE_PROFILES.desktop;
+  const touchActive = settings.deviceMode === "auto" ? profile.usesTouch && touchAvailable : profile.usesTouch;
   state.deviceProfile = {
     mode: settings.deviceMode,
+    touchAvailable,
+    touchActive,
     ...profile
   };
   document.body.classList.remove("device-desktop", "device-tablet", "device-phone");
@@ -643,7 +649,7 @@ function applyDeviceProfile() {
   document.documentElement.style.setProperty("--overlay-panel-scale", String(profile.overlayScale));
   document.documentElement.style.setProperty("--hud-scale", String(profile.hudScale));
   setMinimapSize(profile.minimapSize);
-  input.touchEnabled = profile.usesTouch;
+  input.touchEnabled = touchActive;
   touchControlsRoot.classList.toggle("enabled", input.touchEnabled);
   if (!input.touchEnabled) {
     input.touchSteer = 0;
@@ -656,7 +662,11 @@ function applyDeviceProfile() {
   if (deviceModeSelect) deviceModeSelect.value = settings.deviceMode;
   if (deviceModeActive) {
     const label = resolvedType.charAt(0).toUpperCase() + resolvedType.slice(1);
-    deviceModeActive.textContent = `Active device: ${label}${settings.deviceMode === "auto" ? " (Auto)" : " (Manual)"}`;
+    if (settings.deviceMode === "auto") {
+      deviceModeActive.textContent = `Active device: ${label} (Auto, touch ${touchActive ? "on" : "off"})`;
+    } else {
+      deviceModeActive.textContent = `Active device: ${label} (Manual, touch ${touchActive ? "on" : "off"})`;
+    }
   }
 }
 
