@@ -1738,7 +1738,7 @@ function updatePlayer(dt) {
   const throttle = input.throttle ? 1 : 0;
   const brake = input.brake ? 1 : 0;
   const drift = input.drift && !airborne;
-  const boostActive = input.boost && state.boost > 0.05 && !airborne;
+  const boostActive = input.boost && state.boost > 0.05;
   if (state.padSpeedTimer > 0) {
     state.padSpeedTimer = Math.max(0, state.padSpeedTimer - dt);
     if (state.padSpeedTimer === 0) state.padSpeedMult = 1;
@@ -1756,20 +1756,25 @@ function updatePlayer(dt) {
       player.speed -= Math.sign(player.speed) * (7.3 + speedRatio * 4.6) * dt;
     }
   } else {
-    player.speed -= Math.sign(player.speed) * Math.min(Math.abs(player.speed), (1.15 + speedRatio * 0.8) * dt);
+    const airControlAccel = accel * 0.16;
+    if (throttle) player.speed += airControlAccel * dt;
+    if (brake) player.speed -= airControlAccel * dt * 0.92;
+    if (!throttle && !brake) {
+      player.speed -= Math.sign(player.speed) * Math.min(Math.abs(player.speed), (0.72 + speedRatio * 0.45) * dt);
+    }
   }
 
   const boostCap = boostActive ? loadoutStats.boostSpeedMult : 1;
   player.speed = THREE.MathUtils.clamp(player.speed, -14, player.maxSpeed * boostCap * padMult);
 
   const turnAssist = 0.78 + (1 - speedRatio) * 0.42;
-  const turnPower = player.turnRate * turnAssist * (drift ? 1.18 : 1) * (airborne ? 0.22 : 1);
+  const turnPower = player.turnRate * turnAssist * (drift ? 1.18 : 1) * (airborne ? 0.34 : 1);
   const direction = player.speed >= 0 ? 1 : -1;
-  const steerMultiplier = airborne ? loadoutStats.airTurnRate * 0.28 : 1;
+  const steerMultiplier = airborne ? loadoutStats.airTurnRate * 0.4 : 1;
   player.heading += steer * turnPower * dt * direction * steerMultiplier;
 
-  const grip = airborne ? 0.75 : drift ? player.driftGrip : player.normalGrip;
-  const slipAmount = airborne ? 0.015 : drift ? loadoutStats.driftSlip : loadoutStats.roadSlip;
+  const grip = airborne ? 0.92 : drift ? player.driftGrip : player.normalGrip;
+  const slipAmount = airborne ? 0.03 : drift ? loadoutStats.driftSlip : loadoutStats.roadSlip;
   player.moveHeading = THREE.MathUtils.lerp(player.moveHeading, player.heading, grip * dt);
 
   const forward = new THREE.Vector3(Math.sin(player.moveHeading), 0, Math.cos(player.moveHeading));
