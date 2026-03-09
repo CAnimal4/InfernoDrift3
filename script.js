@@ -35,6 +35,8 @@ const invertToggle = document.getElementById("invert-toggle");
 const cameraToggle = document.getElementById("camera-toggle");
 const rampDensitySelect = document.getElementById("ramp-density-select");
 const touchModeToggle = document.getElementById("touch-mode-toggle");
+const deviceModeSelect = document.getElementById("device-mode-select");
+const deviceModeActive = document.getElementById("device-mode-active");
 const bodySelect = document.getElementById("body-select");
 const wheelSelect = document.getElementById("wheel-select");
 const styleSelect = document.getElementById("style-select");
@@ -137,6 +139,50 @@ const DEBUG_FLAGS = {
 };
 const PLAYER_SPAWN_X = 0;
 const PLAYER_SPAWN_Z = -90;
+const DEVICE_PROFILES = {
+  desktop: {
+    type: "desktop",
+    usesTouch: false,
+    compactHud: false,
+    minimapSize: 180,
+    controlScale: 1,
+    touchSteerScale: 1,
+    touchDeadzone: 0.08,
+    botSpeedMult: 1,
+    botReactionMult: 1,
+    powerupRadiusMult: 1,
+    boostPadRadiusMult: 1,
+    rampForgiveness: 0
+  },
+  tablet: {
+    type: "tablet",
+    usesTouch: true,
+    compactHud: true,
+    minimapSize: 150,
+    controlScale: 1.03,
+    touchSteerScale: 0.94,
+    touchDeadzone: 0.06,
+    botSpeedMult: 0.95,
+    botReactionMult: 0.96,
+    powerupRadiusMult: 1.12,
+    boostPadRadiusMult: 1.08,
+    rampForgiveness: 0.03
+  },
+  phone: {
+    type: "phone",
+    usesTouch: true,
+    compactHud: true,
+    minimapSize: 116,
+    controlScale: 0.84,
+    touchSteerScale: 0.86,
+    touchDeadzone: 0.05,
+    botSpeedMult: 0.89,
+    botReactionMult: 0.9,
+    powerupRadiusMult: 1.22,
+    boostPadRadiusMult: 1.14,
+    rampForgiveness: 0.06
+  }
+};
 
 const colorWhite = new THREE.MeshStandardMaterial({ color: 0xfaf4ea, roughness: 0.4 });
 const colorBlack = new THREE.MeshStandardMaterial({ color: 0x10131a, roughness: 0.6 });
@@ -478,7 +524,9 @@ const settings = {
   difficulty: "classic",
   invertSteer: true,
   cameraFocus: false,
-  rampDensity: "normal"
+  rampDensity: "normal",
+  deviceMode: "auto",
+  touchControlMode: "auto"
 };
 
 const customization = {
@@ -520,7 +568,8 @@ const state = {
   minimapHeading: 0,
   minimapDebugTimer: 0,
   noBotsRecoveryTimer: 0,
-  playerLoadoutStats: null
+  playerLoadoutStats: null,
+  deviceProfile: { mode: "auto", ...DEVICE_PROFILES.desktop }
 };
 
 function clampWorldIndex(index) {
@@ -531,6 +580,58 @@ function clampLevelIndex(worldIndex, levelIndex) {
   const safeWorld = clampWorldIndex(worldIndex);
   const maxLevel = worldData[safeWorld].levels.length - 1;
   return THREE.MathUtils.clamp(levelIndex, 0, maxLevel);
+}
+
+function detectDeviceType() {
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  const shortest = Math.min(width, height);
+  const coarsePointer = window.matchMedia ? window.matchMedia("(pointer: coarse)").matches : false;
+  const touchPoints = navigator.maxTouchPoints || 0;
+  const touchCapable = coarsePointer || touchPoints > 0;
+  if (!touchCapable) return "desktop";
+  if (shortest <= 540 || width <= 820) return "phone";
+  if (shortest <= 1024 || width <= 1366) return "tablet";
+  return "desktop";
+}
+
+function getDeviceAssistTuning() {
+  return state.deviceProfile ?? { mode: "auto", ...DEVICE_PROFILES.desktop };
+}
+
+function setMinimapSize(size) {
+  if (!minimapCanvas) return;
+  minimapCanvas.width = size;
+  minimapCanvas.height = size;
+  minimapCanvas.style.width = `${size}px`;
+  minimapCanvas.style.height = `${size}px`;
+}
+
+function applyDeviceProfile() {
+  const resolvedType = settings.deviceMode === "auto" ? detectDeviceType() : settings.deviceMode;
+  const profile = DEVICE_PROFILES[resolvedType] ?? DEVICE_PROFILES.desktop;
+  state.deviceProfile = {
+    mode: settings.deviceMode,
+    ...profile
+  };
+  document.body.classList.remove("device-desktop", "device-tablet", "device-phone");
+  document.body.classList.add(`device-${resolvedType}`);
+  document.documentElement.style.setProperty("--minimap-size", `${profile.minimapSize}px`);
+  document.documentElement.style.setProperty("--touch-scale", String(profile.controlScale));
+  setMinimapSize(profile.minimapSize);
+
+  if (settings.touchControlMode === "auto") {
+    input.touchEnabled = profile.usesTouch;
+  } else {
+    input.touchEnabled = settings.touchControlMode === "on";
+  }
+  touchControlsRoot.classList.toggle("enabled", input.touchEnabled);
+  if (touchModeToggle) touchModeToggle.checked = input.touchEnabled;
+  if (deviceModeSelect) deviceModeSelect.value = settings.deviceMode;
+  if (deviceModeActive) {
+    const label = resolvedType.charAt(0).toUpperCase() + resolvedType.slice(1);
+    deviceModeActive.textContent = `Active device: ${label}${settings.deviceMode === "auto" ? " (Auto)" : " (Manual)"}`;
+  }
 }
 
 function isProgressAtLeast(progress, unlock) {
@@ -645,7 +746,9 @@ function savePersistentState() {
       invertSteer: settings.invertSteer,
       cameraFocus: settings.cameraFocus,
       rampDensity: settings.rampDensity,
-      touchEnabled: input.touchEnabled
+      touchEnabled: input.touchEnabled,
+      deviceMode: settings.deviceMode,
+      touchControlMode: settings.touchControlMode
     },
     customization: {
       bodyId: customization.bodyId,
@@ -678,6 +781,9 @@ function loadPersistentState() {
       if (typeof data.settings.cameraFocus === "boolean") settings.cameraFocus = data.settings.cameraFocus;
       if (typeof data.settings.rampDensity === "string") settings.rampDensity = data.settings.rampDensity;
       if (typeof data.settings.touchEnabled === "boolean") input.touchEnabled = data.settings.touchEnabled;
+      if (typeof data.settings.deviceMode === "string") settings.deviceMode = data.settings.deviceMode;
+      if (typeof data.settings.touchControlMode === "string") settings.touchControlMode = data.settings.touchControlMode;
+      else if (typeof data.settings.touchEnabled === "boolean") settings.touchControlMode = data.settings.touchEnabled ? "on" : "off";
     }
     if (data.customization && typeof data.customization === "object") {
       if (typeof data.customization.bodyId === "string") customization.bodyId = data.customization.bodyId;
@@ -1589,6 +1695,7 @@ function emitDrivingFx(dt, steer, driftActive, boostActive) {
 
 function updatePlayer(dt) {
   const loadoutStats = state.playerLoadoutStats ?? computePlayerLoadoutStats();
+  const deviceAssist = getDeviceAssistTuning();
   const inputSteer = getSteer() * (settings.invertSteer ? -1 : 1);
   const steerFilter = input.drift ? 5.2 : 8.2;
   state.steerSmoothed += (inputSteer - state.steerSmoothed) * dt * steerFilter;
@@ -1629,7 +1736,7 @@ function updatePlayer(dt) {
   const forward = new THREE.Vector3(Math.sin(player.moveHeading), 0, Math.cos(player.moveHeading));
   player.velocity.copy(forward).multiplyScalar(player.speed);
   const lateral = new THREE.Vector3(Math.cos(player.moveHeading), 0, -Math.sin(player.moveHeading));
-  player.velocity.addScaledVector(lateral, steer * speedAbs * slipAmount * 0.08);
+  player.velocity.addScaledVector(lateral, steer * speedAbs * slipAmount * 0.08 * (deviceAssist.usesTouch ? 0.94 : 1));
 
   if (boostActive) {
     state.boost = Math.max(0, state.boost - dt * 0.18 * loadoutStats.boostDrainMult);
@@ -1656,6 +1763,7 @@ function updatePlayer(dt) {
 function updateVerticalPhysics(car, dt) {
   const speedAbs = Math.abs(car.speed);
   const loadoutStats = !car.isBot ? state.playerLoadoutStats ?? computePlayerLoadoutStats() : null;
+  const deviceAssist = !car.isBot ? getDeviceAssistTuning() : null;
   const substeps = THREE.MathUtils.clamp(Math.ceil(speedAbs / 17), PHYSICS_SUBSTEPS_BASE, PHYSICS_SUBSTEPS_MAX);
   const stepDt = dt / substeps;
 
@@ -1709,7 +1817,9 @@ function updateVerticalPhysics(car, dt) {
       const triggerRadius = radius + RAMP_TRIGGER_THICKNESS + speedMargin;
       const closestDistance = Math.min(prevDistance, currentDistance, nextDistance, sweptFromPrev, sweptDistance);
       const centerBoost = 1 - THREE.MathUtils.clamp(closestDistance / triggerRadius, 0, 1);
-      const groundedEnough = car.position.y <= RAMP_MAX_GROUNDED_Y_FOR_TRIGGER + (!car.isBot ? loadoutStats?.rampStick ?? 0 : 0);
+      const groundedEnough =
+        car.position.y <=
+        RAMP_MAX_GROUNDED_Y_FOR_TRIGGER + (!car.isBot ? (loadoutStats?.rampStick ?? 0) + (deviceAssist?.rampForgiveness ?? 0) : 0);
       const radialX = ramp.position.x - nowX;
       const radialZ = ramp.position.z - nowZ;
       const radialLen = Math.hypot(radialX, radialZ) || 1;
@@ -1788,8 +1898,10 @@ function updateBots(dt) {
   if (settings.difficulty === "no_bots") return;
   const level = getLevel();
   const profile = getDifficultyProfile();
+  const deviceAssist = getDeviceAssistTuning();
   const slowMultiplier = state.slowBotsTimer > 0 ? 0.72 : 1;
-  const targetSpeed = (level.botSpeed + state.heat * 8 * profile.heatRamp) * profile.speedMultiplier * slowMultiplier;
+  const targetSpeed =
+    (level.botSpeed + state.heat * 8 * profile.heatRamp) * profile.speedMultiplier * slowMultiplier * deviceAssist.botSpeedMult;
   if (bots.length === 0) return;
 
   const packCenter = new THREE.Vector3();
@@ -1843,7 +1955,7 @@ function updateBots(dt) {
     }
     steer = THREE.MathUtils.clamp(steer, -1, 1);
 
-    bot.heading += steer * bot.turnRate * dt * profile.reaction;
+    bot.heading += steer * bot.turnRate * dt * profile.reaction * deviceAssist.botReactionMult;
     bot.moveHeading = THREE.MathUtils.lerp(bot.moveHeading, bot.heading, (1.9 + profile.botSkill) * dt);
 
     const desiredRange =
@@ -1922,9 +2034,10 @@ function updateObstacles(entity) {
 }
 
 function updatePowerupCollisions() {
+  const deviceAssist = getDeviceAssistTuning();
   powerups.forEach((powerup) => {
     const dist = powerup.position.distanceTo(player.position);
-    if (dist < POWERUP_PICKUP_RADIUS) {
+    if (dist < POWERUP_PICKUP_RADIUS * deviceAssist.powerupRadiusMult) {
       consumePowerup(powerup);
     }
   });
@@ -1932,9 +2045,10 @@ function updatePowerupCollisions() {
 
 function updateBoostPads() {
   const loadoutStats = state.playerLoadoutStats ?? computePlayerLoadoutStats();
+  const deviceAssist = getDeviceAssistTuning();
   boostPads.forEach((pad) => {
     const distance = Math.hypot(player.position.x - pad.position.x, player.position.z - pad.position.z);
-    if (distance < pad.userData.radius && player.position.y <= 0.2) {
+    if (distance < pad.userData.radius * deviceAssist.boostPadRadiusMult && player.position.y <= 0.2) {
       player.speed = Math.min(player.maxSpeed * loadoutStats.boostSpeedMult * loadoutStats.padSpeedMult, player.speed + 30);
       state.boost = Math.min(1, state.boost + 0.24);
       state.padSpeedTimer = loadoutStats.padDuration;
@@ -2225,7 +2339,7 @@ function handlePlayerHit(sourceBotId = -1) {
 
 function getSteer() {
   if (input.touchEnabled) {
-    return input.touchSteer;
+    return input.touchSteer * getDeviceAssistTuning().touchSteerScale;
   }
   if (input.pointerActive) {
     const delta = (input.pointerStartX - input.pointerX) / (window.innerWidth * 0.4);
@@ -2302,7 +2416,9 @@ function completeLevel() {
         invertSteer: settings.invertSteer,
         cameraFocus: settings.cameraFocus,
         rampDensity: settings.rampDensity,
-        touchEnabled: input.touchEnabled
+        touchEnabled: input.touchEnabled,
+        deviceMode: settings.deviceMode,
+        touchControlMode: settings.touchControlMode
       },
       customization: {
         bodyId: customization.bodyId,
@@ -2411,6 +2527,7 @@ function animate(now) {
 }
 
 window.addEventListener("resize", () => {
+  if (settings.deviceMode === "auto") applyDeviceProfile();
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -2468,6 +2585,7 @@ window.addEventListener("pointerup", () => {
 });
 
 function updateTouchInput(clientX, clientY) {
+  const deviceAssist = getDeviceAssistTuning();
   const rect = touchSteerPad.getBoundingClientRect();
   const cx = rect.left + rect.width * 0.5;
   const cy = rect.top + rect.height * 0.5;
@@ -2481,7 +2599,8 @@ function updateTouchInput(clientX, clientY) {
   const knobX = nx * clampedDist;
   const knobY = ny * clampedDist;
   touchSteerKnob.style.transform = `translate(${knobX}px, ${knobY}px)`;
-  input.touchSteer = THREE.MathUtils.clamp(knobX / radius, -1, 1);
+  const rawSteer = THREE.MathUtils.clamp((knobX / radius) * deviceAssist.touchSteerScale, -1, 1);
+  input.touchSteer = Math.abs(rawSteer) < deviceAssist.touchDeadzone ? 0 : rawSteer;
   input.throttle = ny < -0.1 || clampedDist > radius * 0.2;
   input.brake = ny > 0.45;
 }
@@ -2670,13 +2789,21 @@ if (glowSelect) {
 
 if (touchModeToggle) {
   touchModeToggle.addEventListener("change", (event) => {
-    input.touchEnabled = event.target.checked;
-    touchControlsRoot.classList.toggle("enabled", input.touchEnabled);
+    settings.touchControlMode = event.target.checked ? "on" : "off";
+    applyDeviceProfile();
     if (!input.touchEnabled) {
       resetTouchSteer();
       input.drift = false;
       input.boost = false;
     }
+    savePersistentState();
+  });
+}
+
+if (deviceModeSelect) {
+  deviceModeSelect.addEventListener("change", (event) => {
+    settings.deviceMode = event.target.value;
+    applyDeviceProfile();
     savePersistentState();
   });
 }
@@ -2688,8 +2815,7 @@ difficultySelect.value = settings.difficulty;
 invertToggle.checked = settings.invertSteer;
 cameraToggle.checked = settings.cameraFocus;
 if (rampDensitySelect) rampDensitySelect.value = settings.rampDensity;
-if (touchModeToggle) touchModeToggle.checked = input.touchEnabled;
-touchControlsRoot.classList.toggle("enabled", input.touchEnabled);
+applyDeviceProfile();
 applyPlayerCustomization({ progress: getProgressSnapshot() });
 resetLevel();
 updateHud();

@@ -16,6 +16,12 @@
   --hud-top: calc(var(--progress-top) + var(--progress-height) + var(--stack-gap));
   --status-top: calc(var(--hud-top) + 48px);
   --minimap-top: calc(var(--status-top) + 36px);
+  --minimap-size: 180px;
+  --touch-scale: 1;
+  --hud-pill-padding-y: 7px;
+  --hud-pill-padding-x: 10px;
+  --hud-font-size: 0.9rem;
+  --hud-label-size: 0.7rem;
 }
 
 * {
@@ -56,7 +62,7 @@ canvas {
 }
 
 .hud .pill {
-  padding: 7px 10px;
+  padding: var(--hud-pill-padding-y) var(--hud-pill-padding-x);
   border: 1px solid var(--stroke);
   border-radius: 999px;
   background: var(--panel);
@@ -79,13 +85,13 @@ canvas {
 
 .hud .label {
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: var(--hud-label-size);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
 .hud strong {
-  font-size: 0.9rem;
+  font-size: var(--hud-font-size);
 }
 
 .progress {
@@ -473,6 +479,8 @@ button:hover {
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.2s ease;
+  transform: scale(var(--touch-scale));
+  transform-origin: bottom center;
 }
 
 .touch-controls.enabled {
@@ -553,11 +561,80 @@ button:hover {
 }
 
 #minimap {
-  width: 180px;
-  height: 180px;
+  width: var(--minimap-size);
+  height: var(--minimap-size);
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: rgba(10, 18, 30, 0.95);
+}
+
+body.device-tablet {
+  --stack-gap: 22px;
+  --status-top: calc(var(--hud-top) + 44px);
+  --minimap-top: calc(var(--status-top) + 30px);
+  --minimap-size: 150px;
+  --touch-scale: 1.03;
+  --hud-pill-padding-y: 6px;
+  --hud-pill-padding-x: 9px;
+  --hud-font-size: 0.87rem;
+  --hud-label-size: 0.64rem;
+}
+
+body.device-phone {
+  --progress-top: 16px;
+  --progress-height: 8px;
+  --stack-gap: 18px;
+  --status-top: calc(var(--hud-top) + 38px);
+  --minimap-top: calc(var(--status-top) + 24px);
+  --minimap-size: 116px;
+  --touch-scale: 0.84;
+  --hud-pill-padding-y: 5px;
+  --hud-pill-padding-x: 8px;
+  --hud-font-size: 0.81rem;
+  --hud-label-size: 0.58rem;
+}
+
+body.device-phone .hud {
+  left: 10px;
+  right: 10px;
+  gap: 5px;
+}
+
+body.device-phone .status {
+  right: 10px;
+  gap: 5px;
+}
+
+body.device-phone .status .pill {
+  padding: 6px 8px;
+}
+
+body.device-phone .bar {
+  width: 74px;
+}
+
+body.device-phone .minimap-wrap {
+  left: 10px;
+  padding: 7px;
+}
+
+body.device-phone .menu-panel {
+  max-width: min(94vw, 620px);
+  padding: 20px 18px;
+}
+
+body.device-phone .custom-layout,
+body.device-phone .custom-grid,
+body.device-phone .custom-stats {
+  grid-template-columns: 1fr;
+}
+
+body.device-tablet .menu-panel {
+  max-width: min(92vw, 700px);
+}
+
+body.device-tablet .custom-stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .status {

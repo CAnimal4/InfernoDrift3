@@ -150,6 +150,16 @@
                 <input id="touch-mode-toggle" type="checkbox" />
               </label>
               <label class="field">
+                <span>Device Mode</span>
+                <select id="device-mode-select">
+                  <option value="auto" selected>Auto Detect</option>
+                  <option value="desktop">Desktop</option>
+                  <option value="tablet">Tablet</option>
+                  <option value="phone">Phone</option>
+                </select>
+              </label>
+              <p class="hint" id="device-mode-active">Active device: Desktop</p>
+              <label class="field">
                 <span>Ramp Density</span>
                 <select id="ramp-density-select">
                   <option value="low">Low</option>
