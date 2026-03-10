@@ -1756,15 +1756,15 @@ function updatePlayer(dt) {
       player.speed -= Math.sign(player.speed) * (7.3 + speedRatio * 4.6) * dt;
     }
   } else {
-    const airControlAccel = accel * 0.18;
+    const airControlAccel = accel * (boostActive ? 0.42 : 0.3);
     if (throttle) player.speed += airControlAccel * dt;
-    if (brake) player.speed -= airControlAccel * dt * 0.92;
+    if (brake) player.speed -= airControlAccel * dt * 1.08;
     if (!throttle && !brake) {
-      player.speed -= Math.sign(player.speed) * Math.min(Math.abs(player.speed), (0.72 + speedRatio * 0.45) * dt);
+      player.speed -= Math.sign(player.speed) * Math.min(Math.abs(player.speed), (0.2 + speedRatio * 0.12) * dt);
     }
   }
 
-  const boostCap = boostActive ? loadoutStats.boostSpeedMult : 1;
+  const boostCap = boostActive ? loadoutStats.boostSpeedMult * (airborne ? 1.08 : 1) : 1;
   player.speed = THREE.MathUtils.clamp(player.speed, -14, player.maxSpeed * boostCap * padMult);
 
   const turnAssist = 0.78 + (1 - speedRatio) * 0.42;
