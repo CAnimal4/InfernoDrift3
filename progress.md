@@ -1,0 +1,145 @@
+Original prompt: Please make it so that boost does something and works in air and make it so that driving in air is slightly faster than driving on ground (like 15 ish mph) make this for all devises. Also for tablet, move the joystick a bit farther from teh side of the screen and corner for better mobility, make the circle in teh joystick (the big one) go away, and make the actual joystick not appear until touched. On tablet only, make the drift and boost buttons bigger and easier to click on. Also for tablet and phone make it so that the text on buttons (like "drift") can not be selected or highlighted because it makes it annoying to drive
+
+- Added explicit airborne speed/boost tuning hooks in `script.js` so boost has more bite in the air and airborne top speed can exceed ground speed.
+- Adjusted tablet touch UI in `style.css` to move the stick inward, hide the large steering ring, and enlarge action buttons.
+- Added hidden-until-touched joystick knob behavior and extra touch `preventDefault()` handling in `script.js`.
+- Validation:
+  - `node --check script.js`
+  - `git diff --check`
+  - Playwright smoke via local `python3 -m http.server 4173` plus headless Chromium with SwiftShader flags; captured `/tmp/inferno-tablet-touch.png` and `/tmp/inferno-phone-layout.png`
+- Note: local test install created untracked `node_modules/`; do not commit it.
+
+- Follow-up work: apply airborne speed rules to bots too, add `M` to open menu, and add password-gated Dev Mode with a mid-air backflip (`B` / touch button).
+- Dev Mode smoke test passed with an escalated browser run:
+  - `M` opened the menu
+  - password prompt appeared and accepted `iIbelikesheesh`
+  - tablet + phone both showed the Dev Mode backflip touch button
+  - screenshot: `/tmp/inferno-devmode-tablet.png`
+
+- Promoted the old Dev Mode stunt actions to the base game: `X` jump and `C` backflip now work in every mode, and touch Jump/Backflip buttons show whenever touch controls are active.
+- Reworked Auto device mode to respond to recent input modality:
+  - keyboard or mouse input forces desktop layout/controls in Auto
+  - touch interaction forces tablet/phone layout by viewport size in Auto
+  - portable touch devices still default to touch-friendly auto layouts when no keyboard/mouse intent is seen
+- Added a Dev Tools panel in the Settings tab (only visible when Dev Mode is enabled):
+  - player speed slider
+  - bot speed slider
+  - infinite boost toggle
+  - invulnerable toggle
+  - freeze bots toggle
+  - quick actions for refill boost, max lives, and clear level
+- Validation:
+  - `node --check script.js`
+  - `git diff --check`
+  - browser smoke test with local server + Playwright (escalated headless Chromium)
+  - visual check screenshot: `/tmp/inferno-dev-tools.png`
+- Note: untracked local artifacts still present (`node_modules/`, `.DS_Store`, `progress.md`, `smoke_devmode.mjs`) and should stay out of commits unless explicitly requested.
+
+- Reworked `InfernoDrift 3.3` identity buildings into drive-through arches so level landmarks keep character without acting like random solid blockers.
+- Flattened `InfernoDriftMax 1` arena logic: removed bowl height behavior, swapped to a large flat rectangular pitch with side/end walls, rebuilt goals, and changed ball bounds/scoring to a real goal-volume check.
+- Added Max boost-hit damage with brief stun/spinout for both player and bots, and gave Max bots their own boost bursts.
+- Added a `jumpToCampaignLevel()` helper so Dev world/level selectors rebuild the correct campaign stage immediately instead of only changing stored values.
+- Validation:
+  - `node --check script.js`
+  - `git diff --check`
+  - Attempted Playwright smoke via `python3 -m http.server 4173` + `node smoke_games.mjs`, but Chromium still failed to create a WebGL context in this environment, so browser gameplay automation could not complete here.
+- Follow-up Max tuning pass:
+  - fixed goal geometry direction so blue/red goals both recess outward consistently
+  - improved player Max handling with less coast drag, stronger turn assist, and lower road slip
+  - improved Max bot target prediction/spacing and added a visible player damage bar by repurposing the status HUD's shield meter in Max mode
+- Validation:
+  - `node --check script.js`
+  - `git diff --check`
+- Added Max-only `L` ball-cam toggle with camera look blending toward the ball.
+- Expanded Max teams with dedicated goalie bots on both sides and tightened bot heuristics/spacing/boost usage for more Rocket-League-like rotations.
+- Note: this is heuristic bot AI, not ML training.
+- Validation:
+  - `node --check script.js`
+  - `git diff --check`
+- Max control rework:
+  - `Space` now triggers a close-range ball lunge in Max only
+  - `Ctrl` / `Command` now triggers a close-range enemy lunge in Max only
+  - touch buttons in Max now relabel to Ball Lunge / Target while keeping boost available
+- Replaced Max damage fill-up with health:
+  - starts full
+  - opposing-team hits drain it
+  - zero health causes stun
+  - health refills over time afterward
+- Cleaned Dev/Max transitions:
+  - leaving Dev Mode forces the game back to InfernoDrift 3.3
+  - clears Max-only runtime state like ball cam and lunge cooldowns
+  - mode-aware controls/how-to/start overlay copy now update with the selected game
+- Validation:
+  - `node --check script.js`
+  - `git diff --check`
+- Debug/dev polish pass:
+  - added a visible on-screen debug HUD tied to the Dev Mode Debug HUD toggle
+  - added minimalist floating health bars above Max bots
+  - adjusted ball cam so the car stays visible in frame
+  - made goalie bots bigger and more assertive on ball challenges
+- Validation:
+  - `node --check script.js`
+  - `git diff --check`
+
+- Gameplay systems pass:
+  - added grouped driving tuning, world-native handling modifiers, and cleaner grounded/airborne/Max response tuning for more predictable steering, drift, and momentum retention
+  - added Max arena systems for front-only goal validation, match stats/events, demolition + respawn flow, configurable stronger boost pads, rolling goal replay, and a partial wall-riding surface model on arena walls
+  - exposed `window.render_game_to_text`, `window.advanceTime(ms)`, and `window.__infernodriftTestApi` for deterministic automation/debug checks
+  - expanded Dev Mode UI with arena toggles for replay, demolitions, boost variant, world modifier, force demo, and replay triggering plus a live box-score panel
+  - updated smoke scripts to use installed Playwright Chromium instead of a hard-coded browser path
+- Validation:
+  - `node --check script.js`
+  - `node --check smoke_games.mjs`
+  - `node --check smoke_devmode.mjs`
+  - `node smoke_devmode.mjs`
+  - `npx playwright install chromium`
+  - `node smoke_games.mjs` (escalated, passed)
+  - screenshot review: `output/playwright/games-smoke.png`
+- Known limitations:
+  - arena wall-driving is a stable partial implementation using climbable wall bands, not true full 360-degree surface traversal
+  - replay is a short buffered goal replay and not a cinematic/free-camera system
+  - assist/save attribution remains heuristic
+  - multiplayer remains assessment-only; no networking implementation was added
+
+- Follow-up Max UX pass:
+  - increased Max arena car scale/collision size to make ball contact easier
+  - split Max team skin cosmetics from InfernoDrift 3.3 cosmetics so blue-team Max defaults to a blue skin without leaking into 3.3
+  - exposed active skin ids in `render_game_to_text` for deterministic verification
+- Validation:
+  - `node --check script.js`
+  - `git diff --check`
+  - `node smoke_games.mjs` (escalated, passed; confirms Max blue skin ids are `frost` / `ice` / `midnight` / `cyan`)
+- Deploy note:
+  - repo is served from GitHub Pages at `https://canimal4.github.io/InfernoDrift3/`, so pushing `main` is the deployment path
+
+- Max feel cleanup pass:
+  - shrank the Max arena footprint and moved kickoff/team spawn points inward so play stays tighter and easier to read
+  - slowed Max driving, raised turn assist, reduced lateral slip, and softened bot pace so player control feels calmer and more deliberate
+  - toned wall climbing down into a much shallower edge ride with minimal lift/rotation so it stops fighting steering
+  - reduced ball impulse, bounce, and retention so hits are slower and more grounded
+  - simplified goal replay to a shorter ball/player-focused replay and hid bots during playback to reduce visual shake
+- Validation:
+  - `node --check script.js`
+  - `git diff --check`
+  - `node "$WEB_GAME_CLIENT" ... --screenshot-dir output/web-game` (escalated, passed after linking local Playwright into the skill script path)
+  - screenshot review: `output/web-game/shot-0.png`
+  - `node smoke_games.mjs` (escalated, passed for Max-specific state validation)
+- Notes:
+  - the generic web-game client naturally starts InfernoDrift 3.3 from the main menu, so Max-specific verification still relies on `smoke_games.mjs`
+
+- TRY AT YOUR OWN RISK mode pass:
+  - added a new Dev-only arena card for `TRY AT YOUR OWN RISK`
+  - routed the mode through the existing Max arena systems while keeping it blocked outside Dev Mode
+  - added adaptive risk memory so bots respond to goals, player touches, and failed close-pressure sequences instead of just using flat stat boosts
+  - upgraded risk bots into more coordinated roles including sweeper and playmaker behavior with tighter rotation, faster reactions, and team spacing
+  - exposed the risk mode id and adaptive memory in `render_game_to_text` for deterministic verification
+
+- InfernoDrift 3.3 adaptive AI pass:
+  - brought the same "learn from mistakes" concept into the campaign hunter loop using shared memory for recent player escapes, hits, and near-misses
+  - hunters now tighten prediction, collapse flanks, increase cutoff pressure, and burst harder when the player keeps slipping the pack
+  - exposed campaign adaptive memory through `render_game_to_text` so 3.3 behavior can be checked in smoke output too
+
+- 3.3 visible risk-mode follow-up:
+  - added a visible `3.3 Hunter AI` selector in normal settings with `Normal` and `Risk`
+  - defaulted the campaign selector to `Risk` so the mode is visible immediately in 3.3
+  - gated the adaptive hunter logic behind that selector and exposed the selected mode in `render_game_to_text`
